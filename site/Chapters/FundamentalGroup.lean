@@ -159,8 +159,8 @@ $`\pi_1(U) \ast_{\pi_1(U \cap V)} \pi_1(V)` is isomorphic to $`\pi_1(X, x_0)`, c
 with the inclusions — under the isomorphism, the canonical map of the $`i`-th factor is
 $`(\iota_i)_*`. The amalgamated product is realised as mathlib's `Monoid.PushoutI` over
 the `Bool`-indexed family of overlap homomorphisms, which is why the cover was indexed by
-`Bool` in the first place. The isomorphism is the lift of the two canonical maps into the
-pushout, inverse to the map out of the pushout induced by the inclusions; the two round
+`Bool` in the first place. The isomorphism is the map out of the pushout induced by the two
+inclusions, with inverse the lift of the two canonical maps into the pushout; the two round
 trips are checked by the pushout's own extensionality principle in one direction and by
 the uniqueness half in the other.
 :::

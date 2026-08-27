@@ -29,6 +29,7 @@ import Contents.TeXPrelude
 import Authors
 import Bibliography
 import Chapters.Introduction
+import Chapters.Overview
 import Chapters.Lattice
 import Chapters.AnalyticFoundations
 import Chapters.Orbifold
@@ -75,6 +76,8 @@ authors := ["Boris Alexeev (formalization)", "Levent Alpöge (mathematics)", "Er
 {blueprint_dashboard (featured := "thm:mathoverflow-1973, def:threefold-space, def:threefold-homotopy-equiv, thm:homeomorphic-six-sphere-of-homotopy-six-sphere")}
 
 {include 0 Chapters.Introduction}
+
+{include 0 Chapters.Overview}
 
 {include 0 Chapters.Lattice}
 

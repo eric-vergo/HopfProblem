@@ -359,21 +359,21 @@ family's connecting map.
 For each elliptic kind $`j \in \{3,4\}` and each $`n`, the kernel of the filling map
 $`H_{n+1}(\partial_j) \to H_{n+1}(\text{filling}_j)` on the boundary of the multiple-fibre
 neighbourhood is isomorphic to $`H_n` of the central bielliptic surface of the log
-transform. The boundary splits as a product of the positive boundary circle with a
-three-manifold, so its homology splits by the Künneth formula into a summand mapping
-isomorphically onto the filling and a summand crossed with the circle; the second summand is
-the kernel, and the isomorphism above is inverse to crossing with the circle class. This is
-what converts a homology class of the elliptic boundary that dies in the filling into a
-class of the surface, where it can be evaluated.
+transform. The boundary is homeomorphic to the product of the positive boundary circle with that
+surface, so its homology splits by the Künneth formula into a summand mapping isomorphically onto
+the filling and a summand crossed with the circle; the second summand is the kernel, and the
+isomorphism above is inverse to crossing with the circle class. This is what converts a homology
+class of the elliptic boundary that dies in the filling into a class of the surface, where it can
+be evaluated.
 :::
 
 :::definition "def:unit-cap-section-class" (lean := "Mathoverflow1973.PeriodFamily.Boundary.EllipticCapProduct.unitCapSectionClass") (parent := "period-family-topology") (uses := "def:boundary-cap-kernel-equiv, def:elliptic-surface")
-An explicit generator of $`H_4` of the elliptic boundary: the image, under the section of the
-cap product decomposition, of the fundamental class of the central surface. Its coordinates
-in the splitting are $`(1,0)`, so it maps to the generator of $`H_4` of the filling, and its
-Wang boundary in $`H_3(T^4) \cong \Z^4` is $`-e_3` — the negative of the fourth basis vector,
-the coordinate that the monodromy fixes. Having a named class with both of these values
-computed is what makes the degree-three elimination argument quantitative rather than
+A distinguished class in $`H_4` of the elliptic boundary: the image, under the section of the
+cap product decomposition, of the fundamental class of the central surface. Its coordinates in the
+splitting are $`(1,0)`, so it generates the summand carried isomorphically onto $`H_4` of the
+filling, and its Wang boundary in $`H_3(T^4) \cong \Z^4` is $`-e_3` — the negative of the fourth
+basis vector, the coordinate that the monodromy fixes. Having a named class with both of these
+values computed is what makes the degree-three elimination argument quantitative rather than
 existential.
 :::
 

@@ -232,14 +232,14 @@ condition that every degree-by-degree elimination below feeds on.
 :::
 
 :::theorem "thm:homology-subsingleton-of-lt" (lean := "Mathoverflow1973.ThreefoldHomology.Finiteness.homology_subsingleton_of_lt") (parent := "homology-x") (uses := "def:actual-quotient-fibre, def:central-boundary-suspension-homeomorph, def:contractible-cover-homology-higher-equiv, def:overlap-phase-homeomorph, def:piece-mapping-torus-homotopy-equiv, def:star-connecting-homomorphism, def:surface-homology-coordinates, thm:exists-closed-quotient-strong-deformation-retraction, thm:source-coinvariant-inclusion-kernel-projection-exact, thm:star-exact-at-ambient")
-$`H_n(X;\Z) = 0` for every $`n > 6`. The pieces are all homotopy equivalent to compact
-objects of real dimension at most $`4` — the cusp filling retracts onto the quotient
-central fibre, each elliptic filling onto its bielliptic central surface, the regular part
-onto a torus bundle over a wedge of two circles — so their homology vanishes above degree
-$`4`, and the overlaps, being mapping tori of a four-torus, vanish above degree $`5`.
-Exactness at the ambient term then squeezes $`H_n(X)` between a group that is already zero
-and a connecting target that is also zero. In Lean the conclusion is `Subsingleton`, which
-for a $`\Z`-module is the vanishing statement.
+$`H_n(X;\Z) = 0` for every $`n > 6`. Each filling is homotopy equivalent to a compact object
+of real dimension $`4` — the cusp filling retracts onto the quotient central fibre, each
+elliptic filling onto its bielliptic central surface — so filling homology vanishes above
+degree $`4`; the regular part, which retracts onto a torus bundle over a wedge of two
+circles, and the overlaps, being mapping tori of a four-torus, vanish above degree $`5`
+instead. Exactness at the ambient term then squeezes $`H_n(X)` between a group that is
+already zero and a connecting target that is also zero. In Lean the conclusion is
+`Subsingleton`, which for a $`\Z`-module is the vanishing statement.
 :::
 
 :::group "homology-x-degrees"
@@ -255,12 +255,12 @@ the star sequence at exactly one place.
 :::theorem "thm:star-left-one-bijective" (lean := "Mathoverflow1973.ThreefoldHomology.SecondDegree.starLeft_one_bijective") (parent := "homology-x-degrees") (uses := "def:star-left-homology-map, thm:space-simply-connected")
 The difference map in degree $`1` is bijective. Surjectivity is exactness at the pair term
 together with $`H_1(X;\Z) = 0`, which comes from simple connectivity through the first
-Hurewicz map. Injectivity is not proved by a determinant computation: source and target
-are finite free $`\Z`-modules of the same rank $`9` — three overlaps of first Betti number
-$`3` each, against $`H_1(J) \cong \Z^3` and $`\prod_i H_1(W_i) \cong \Z^6` — and mathlib's
-`OrzechProperty` upgrades a surjection between finite free modules to a bijection once the
-target's rank is at most the source's. Bijectivity forces the degree-$`1` connecting map to
-vanish, hence the degree-$`2` sum map to be surjective.
+Hurewicz map. Injectivity is not proved by a determinant computation: source and target are
+finite free $`\Z`-modules of the same rank $`9` — three overlaps of first Betti number $`3`
+each, against $`H_1(J) \cong \Z^3` and $`\prod_i H_1(W_i) \cong \Z^6` — and mathlib's
+`OrzechProperty` upgrades a surjection to a bijection as soon as the source's rank is at
+most the target's, which the equality of the two ranks supplies. Bijectivity forces the
+degree-$`1` connecting map to vanish, hence the degree-$`2` sum map to be surjective.
 :::
 
 With $`\partial_1 = 0`, exactness makes $`H_2(X;\Z)` a quotient of the regular part's
@@ -355,10 +355,11 @@ determines the class.
 The linear functional $`H_5(X;\Z) \to \Z` sending $`a` to the top coordinate, in the
 standard basis of $`H_3(T^4;\Z)`, of the Wang boundary of the cusp component of
 $`\partial a`. Its usefulness is that it is faithful: `fifthWangCoordinate_eq_zero` shows
-that a class on which it vanishes is zero, because the cancellation theorem forces the
-three Wang boundaries of $`\partial a` to be equal and monodromy-invariant, invariance
-confines them to a rank-one subgroup detected by this one coordinate, and a class with
-$`\partial a = 0` lies in the image of the sum map from groups that vanish in degree $`5`.
+that a class on which it vanishes is zero, because the cancellation theorem forces the three
+Wang boundaries of $`\partial a` to be equal and monodromy-invariant, invariance confines
+them to a rank-one subgroup detected by this one coordinate, and a class with
+$`\partial a = 0` lies in the image of the degree-$`5` sum map, which is identically zero
+because the degree-$`5` difference map is surjective.
 :::
 
 :::theorem "thm:homology-five-subsingleton" (lean := "Mathoverflow1973.ThreefoldHomology.FifthDegree.homologyFive_subsingleton") (parent := "homology-x-degrees") (uses := "def:central-singular-homology-equiv, def:cusp-boundary-gamma-zero-native-class, def:fifth-wang-coordinate, def:real-torus-h4-equiv, def:star-connecting-homomorphism, def:surface-homology-coordinates, thm:boundary-source-kernel-projection, thm:elliptic-boundary-source-kernel-projection, thm:exists-actual-specialization-homology, thm:exists-controlled-retraction-all-levels, thm:period-cover-h1-ker-eq-deck-difference-range, thm:source-coinvariant-inclusion-kernel-projection-exact, thm:star-exact-at-pair, thm:wang-exact-at-fibre")
@@ -391,10 +392,9 @@ homology.
 
 :::definition "def:homology-six-equiv" (lean := "Mathoverflow1973.ThreefoldHomology.TopDegree.homologySixEquiv") (parent := "homology-x-degrees") (uses := "def:m, def:mapping-torus-homology-wang-boundary, def:period-torus-higher-homology-pontryagin-product, def:piece-mapping-torus-homotopy-equiv, def:product-torus-top-class, def:real-torus-h4-equiv, def:star-connecting-homomorphism, def:threefold-projection, def:torus-matrix-map, def:triangle-torus-action, thm:intersection-to-v-twisted-fold")
 An isomorphism $`H_6(X;\Z) \cong \Z`, realized as the composite of the connecting map into
-the cusp overlap's fifth homology with the identification
-$`H_5(\mathrm{ov}_0;\Z) \cong \Z`. The latter is the Wang sequence of the cusp mapping
-torus in its top range: since the fillings and the regular part contribute nothing in
-degree $`5` or above, $`H_5(\mathrm{ov}_0)` reduces to
+the cusp overlap's fifth homology with the identification $`H_5(\mathrm{ov}_0;\Z) \cong \Z`.
+The latter is the Wang sequence of the cusp mapping torus in its top range: the four-torus
+fibre has no homology in degree $`5`, so $`H_5(\mathrm{ov}_0)` reduces to
 $`\ker\bigl((M_0)_* - 1 \text{ on } H_4(T^4;\Z)\bigr)`, and $`M_0` is unipotent of
 determinant $`1`, so it acts trivially on the top exterior power and the kernel is all of
 $`H_4(T^4;\Z) \cong \Z`. The simp lemma `homologySixEquiv_apply` records the formula: a

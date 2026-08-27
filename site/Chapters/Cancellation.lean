@@ -94,10 +94,10 @@ flows carried inside the cancellation packages — is an instance of this one co
 $`E`, and let $`b` be a regular value, in the sense that no point of $`\{f = b\}` is a
 critical point of $`f`. The subtype $`\{x : M \mid f(x) = b\}` is given a charted-space
 structure over $`\R^{\dim E - 1}` — Mathlib's `EuclideanSpace ℝ (Fin (finrank ℝ E - 1))`.
-The charts are built from *height charts*: charts of $`M` whose first coordinate is
-literally $`f` itself, so that the level set becomes the slice
-$`\{0\} \times \R^{\dim E - 1}`, and the level chart is that slice read off in the
-remaining coordinates.
+The charts are built from *height charts*: charts of $`M` onto open subsets of
+$`\R \times \R^{\dim E - 1}` whose first coordinate is literally $`f` itself, so that the
+level set becomes the slice $`\{b\} \times \R^{\dim E - 1}`, and the level chart is that
+slice read off in the remaining coordinates.
 Regularity is what makes $`f` usable as a coordinate, and phrasing the atlas this way
 means the inclusion into $`M` is smooth by construction rather than by a further argument.
 :::
@@ -394,10 +394,11 @@ argument.
 *Theorem.* Every smooth Morse function with injective critical values on a compact manifold
 admits an adapted system of surgery windows. The system supplies, for each critical point
 $`p`, a Morse-model chart with a radius $`r_p` whose value window
-$`[f(p) - r_p^2,\ f(p) + r_p^2]` contains no other critical value and whose enlarged
-windows $`[f(p) \pm 9 r_p^2]` are pairwise disjoint; and globally, a smooth vector field
-$`V` with its flow, vanishing exactly on $`\mathrm{crit}(f)`, strictly decreasing $`f`
-elsewhere, and equal near each critical point to the model descent field of the chart. The
+$`[f(p) - r_p^2,\ f(p) + r_p^2]` contains no other critical value, and the windows are
+pairwise separated: $`f(p) + r_p^2 < f(q) - r_q^2` whenever $`f(p) < f(q)`. Globally it
+supplies a smooth vector field $`V` with its flow, vanishing exactly on
+$`\mathrm{crit}(f)`, strictly decreasing $`f` elsewhere, and agreeing with the model
+descent field of the chart near every point of the chart block of radius $`2 r_p`. The
 separation of windows is what lets a construction be performed inside one window without
 disturbing another, and the germ condition on the field is what lets the flow be computed
 in model coordinates near a critical point.
@@ -622,18 +623,17 @@ classes to span.
 
 :::theorem "thm:cancel-from-complete-middle-family" (lean := "Mathoverflow1973.MorseCancel.cancel_from_complete_middle_family") (parent := "cancellation-endgame") (uses := "def:canonical-middle-matrix, def:homotopy-equiv-homology-equiv, def:isotopic-to-identity, def:native-morse-index, thm:nonempty-adapted-surgery-windows, thm:regular-level-is-manifold")
 *Theorem (Whitney cancellation of a $`2/3` pair).* Let $`p` be an index-$`2` critical point
-of an index-ordered adapted system whose collapse coordinate
-$`H_2(\{f \le f(p) - r_p^2\}) \to \Z` is surjective, whose lower level has all circles
-null-homotopic, and above which every index below $`3` has already been passed. Let
-$`\gamma_1, \dots, \gamma_n` be a complete family of descending $`2`-spheres for the
-index-$`3` points, all lying above $`p`'s window, and suppose the canonical middle matrix
-against a basis of $`H_2` of the cut sublevel is surjective. Then there is a Morse function
-$`v` with distinct critical values and $`\#\mathrm{crit}(v) + 2 = \#\mathrm{crit}(f)`. The
-proof performs integer column operations on the matrix — realizing each transvection as a
-handle slide of one $`2`-sphere across another — until the row corresponding to $`p` has a
-unit entry against some $`\gamma_i`; the Whitney trick then removes all intersection points
-of the belt sphere of $`p` with $`\gamma_i` except one, and the level-isotopy form of the
-cancellation theorem applies to the pair.
+of an index-ordered adapted system on a compact $`6`-manifold, and write
+$`c = f(p) + r_p^2` for the top of its window. Suppose the collapse coordinate
+$`H_2(\{f \le c\}) \to \Z` attached to $`p`'s handle is surjective, every circle in the
+lower level $`\{f = f(p) - r_p^2\}` is null-homotopic, and every critical point of index
+below $`3` has value less than $`c`. Let $`\gamma_1, \dots, \gamma_n` be a complete family
+of descending $`2`-spheres in $`\{f = c\}` for the index-$`3` points, whose windows all lie
+above $`c`, and suppose the canonical middle matrix of that family against a basis
+$`\Z^r \cong H_2(\{f \le c\})` is surjective. Then there is a Morse function $`v` with
+distinct critical values and $`\#\mathrm{crit}(v) + 2 = \#\mathrm{crit}(f)`. Surjectivity
+of the collapse coordinate is what makes the class of $`p` primitive, and the null-homotopy
+of circles in the lower level is what leaves room for a Whitney disk in the middle level.
 :::
 
 :::theorem "thm:minimal-ordered-index-two-count-zero" (lean := "Mathoverflow1973.MorseCancel.minimal_ordered_index_two_count_zero") (parent := "cancellation-endgame") (uses := "def:canonical-middle-matrix, def:native-morse-count, thm:cancel-from-complete-middle-family, thm:exists-regular-sublevel-homotopy-equiv")

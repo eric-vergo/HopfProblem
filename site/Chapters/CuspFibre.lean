@@ -109,12 +109,14 @@ neighbourhoods.
 Fix $`f\in C(X,\R)`. A local collapse for $`f` is a homotopy $`h:[0,1]\times X\to X` with
 $`h_0=\mathrm{id}`, fixing the zero set $`\{f=0\}` pointwise and never increasing $`f` —
 so $`f(h_s(x))\le f(x)` for all $`s` and $`x` — together with an open set on which the
-endpoint already lies in the zero set, $`f(h_1(x))=0`. The structure bundles these five
-fields. Local collapses compose and finitely combine, and the point of the theory is the
-patching lemma: if $`\{f\le r\}` is compact and every point of $`\{f=0\}` lies in the
-collapse set of some local collapse, then a single local collapse absorbs an entire
-sublevel $`\{f\le\eta\}`. This is what stands in for the usual assertion that a regular
-neighbourhood deformation retracts onto its core.
+endpoint already lies in the zero set, $`f(h_1(x))=0`. The Lean structure carries seven
+fields: the homotopy and the collapse set as data, and the five conditions they satisfy.
+Local collapses compose and finitely combine, and the point of the theory is the patching
+lemma: if $`f` is nonnegative, $`\{f\le r\}` is compact for some $`r>0`, and every point
+of $`\{f=0\}` lies in the collapse set of some local collapse, then a single local
+collapse absorbs an entire sublevel $`\{f\le\eta\}` with $`0<\eta\le r`. This is what
+stands in for the usual assertion that a regular neighbourhood deformation retracts onto
+its core.
 :::
 
 :::definition "def:quotient-central-fibre" (lean := "Mathoverflow1973.CuspRetraction.QuotientCentralFibre") (parent := "cusp-retraction") (uses := "def:cusp-quotient-quotient-space")

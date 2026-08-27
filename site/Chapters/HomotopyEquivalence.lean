@@ -206,14 +206,17 @@ $`h`-cobordism argument performs, once the flow lines between critical points ha
 in the required position.
 
 :::theorem "thm:exists-global-band-lyapunov" (lean := "Mathoverflow1973.Degree.FlowCancellation.exists_global_band_lyapunov") (parent := "homotopy-equiv")
-Suppose the gradient-like flow crosses the band $`c \le f \le d` in uniformly bounded time:
-there is $`T > 0` such that every point of $`\{f \le d\}` satisfies $`f(F_T x) < c`, and
-every point of $`\{f \ge c\}` satisfies $`f(F_{-T} x) > d`. Then there is a $`C^\infty`
-function $`b` with $`\mathrm{d}b(V) < 0` throughout the closed band, agreeing with $`f` as a
-germ at every point outside the open band. The uniform crossing hypothesis is exactly the
-statement that no orbit lingers in the band, so no orbit can be trapped at a critical point
-there; the conclusion converts that dynamical fact into a function with no critical behaviour
-inside the band at all, glued to $`f` outside it.
+Suppose the two boundary levels $`c < d` are crossed strictly downward —
+$`\mathrm{d}f(V) < 0` at every point of $`\{f = c\}` and at every point of
+$`\{f = d\}` — and that the flow crosses the band $`c \le f \le d` in uniformly
+bounded time: there is $`T > 0` such that every point of $`\{f \le d\}` satisfies
+$`f(F_T x) < c`, and every point of $`\{f \ge c\}` satisfies $`f(F_{-T} x) > d`.
+Then there is a $`C^\infty` function $`b` with $`\mathrm{d}b(V) < 0` throughout the
+closed band, agreeing with $`f` as a germ at every point outside the open band. The
+uniform crossing hypothesis is exactly the statement that no orbit lingers in the band,
+so no orbit can be trapped at a critical point there; the conclusion converts that
+dynamical fact into a function with no critical behaviour inside the band at all, glued
+to $`f` outside it.
 :::
 
 :::theorem "thm:remove-morse-band-pair" (lean := "Mathoverflow1973.Degree.FlowCancellation.remove_morse_band_pair") (parent := "homotopy-equiv") (uses := "def:critical-points, def:manifold-morse-is-morse, thm:cont-mdiff-native-flow, thm:exists-global-band-lyapunov")
@@ -269,8 +272,9 @@ and let $`D` be a diffeomorphism of the level $`\{f = c\}` carried by an isotopy
 a compact $`K` and fixing $`T`. Then there are a reference field $`W` with flow $`H` having
 the same orbits and the same forward and backward limits as $`F`, and a modified descending
 field $`V'` with flow $`G`, such that $`V'` agrees with $`V` near every critical point and
-outside a compact set contained in $`f^{-1}(a,b)`, vanishes exactly where $`V` does, still
-satisfies $`\mathrm{d}f(V') < 0` off the critical set, and realizes $`D` as holonomy:
+with $`W` outside a compact set contained in $`f^{-1}(a,b)`, vanishes exactly where $`V`
+does, still satisfies $`\mathrm{d}f(V') < 0` off the critical set, and realizes $`D` as
+holonomy:
 $$`G_1(x) = H_1(Dx) \quad \text{for } x \in \{f = c\}.`
 Before the level the two flows agree — $`G_t = H_t` on $`\{f = c\}` for $`t \le 0` — and after
 it they agree again, forward from the point $`H_1(x)`, which sits on the level $`c - r`; on

@@ -169,8 +169,9 @@ fixedness are checked directly.
 :::
 
 :::definition "def:flat-torus-affine" (lean := "Mathoverflow1973.Elliptic.flatTorusAffine") (parent := "elliptic") (uses := "def:elliptic-kind, def:fixed-period, def:lattice, def:period-domain")
-*Definition.* The self-homeomorphism of $`T^4 = \R^4/\Z^4` of order $`m_j` induced by
-$`x \mapsto A_j x + \tfrac{1}{m_j}v`. It is not defined by descent but by transport:
+*Definition.* The self-homeomorphism of $`T^4 = \R^4/\Z^4` induced by
+$`x \mapsto A_j x + \tfrac{1}{m_j}v`, of order $`m_j` as soon as $`v` is fixed by $`A_j`
+(`flatTorusAffine_iterate_order`). It is not defined by descent but by transport:
 the biholomorphism `affineBiholomorph` of the complex $`2`-torus of the fixed period
 `exampleFixedPeriod j` is conjugated through `flatTorusPeriodHomeomorph`, the
 identification of the flat torus with the period torus supplied by the period basis.

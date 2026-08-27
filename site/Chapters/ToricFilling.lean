@@ -186,8 +186,11 @@ $$`\Psi_v = \mathrm{variableMultiplier}\big(\exp(2\pi i\, C(t) v)\big) \circ
 \mathrm{translate}(\mathrm{cuspVector}\, v), \qquad \mathrm{cuspVector}(v) = (v_1, -v_0).`
 Here $`\mathrm{translate}(w)` relabels the chart of a point from $`s` to $`s + w` without
 touching its chart coordinates — the toric automorphism induced by the lattice shear — and
-$`\mathrm{variableMultiplier}` rescales the first two chart coordinates by the unit vector
-$`\exp(2\pi i\,(C(t)v)_j)`, leaving $`t` fixed.
+$`\mathrm{variableMultiplier}` lets the torus $`(\C^\times)^3` act through the element
+$`\big(\exp(2\pi i\,(C(t)v)_0),\ \exp(2\pi i\,(C(t)v)_1),\ 1\big)`: the two fibre characters
+are scaled by those units and the third character, which is $`t`, is left alone. Inside the
+chart of a triangle $`s` this is multiplication of the three coordinates by the monomials of
+that element read off from $`\mathrm{dual}(s)`.
 
 The rotation $`\mathrm{cuspVector}` is the paper's $`B_0` applied to $`v`, hard-wired
 rather than carried as data. The construction is additive in $`v`, satisfies
@@ -515,7 +518,8 @@ $`b \in B`, $`c \in F`. Then the fundamental-group sequence of the fibration is 
 the middle term:
 $$`\mathrm{range}\big(\pi_1(F, c) \to \pi_1((B \times F)/G)\big) \;=\;
 \ker\big(\pi_1((B \times F)/G) \to \pi_1(B/G)\big).`
-The fibre map is moreover injective, and any section of the base splits the sequence.
+The fibre map is moreover injective, and a $`G`-fixed point of $`F` gives a zero section
+$`B/G \to (B \times F)/G` whose induced map on $`\pi_1` splits the projection.
 :::
 
 :::proof "thm:fibre-fundamental-group-hom-range-eq-ker"

@@ -329,8 +329,9 @@ by the pushforward along the addition map $`G \times G \to G`.
 As with the cross product, the Lean form is curried and bilinear rather than defined on
 a tensor product. It is natural for continuous additive maps: a map of topological
 abelian groups intertwines the products, because it intertwines the addition maps.
-Iterating gives a triple product $`H_1^{\otimes 3} \to H_3`, which is cyclically
-invariant and vanishes when two arguments agree.
+Iterating gives a triple product $`H_1^{\otimes 3} \to H_3`, cyclically invariant with no
+hypothesis at all, and — once $`H_2(G)` is torsion-free — vanishing whenever two of its
+three arguments agree.
 :::
 
 :::definition "def:product-torus-top-class" (lean := "Mathoverflow1973.PeriodTorusHigherHomology.productTorusTopClass") (parent := "torus-homology") (uses := "def:product-torus-homology-equiv")

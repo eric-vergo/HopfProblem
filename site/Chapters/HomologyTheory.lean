@@ -270,10 +270,12 @@ the ambient complex at all. $`\blacksquare`
 :::
 
 :::theorem "thm:singular-mayer-vietoris-exact-at-pair" (lean := "Mathoverflow1973.SingularMayerVietoris.exact_at_pair") (parent := "homology-theory") (uses := "def:singular-homology-map, thm:chain-sequence-short-exact, thm:small-inclusion-quasi-iso")
-*Theorem.* Exactness at $`H_n(U) \oplus H_n(V)`: the range of
+*Theorem.* Let $`U` and $`V` be open with $`U \cup V = X`. Exactness at $`H_n(U) \oplus H_n(V)`: the range of
 $`a \mapsto (i_{U*}a, -i_{V*}a)` equals the kernel of
 $`(a,b) \mapsto j_{U*}a + j_{V*}b`, the map $`H_n(U) \oplus H_n(V) \to H_n(X)` given by
-the sum of the two pushforwards along the inclusions of $`U` and $`V` into $`X`.
+the sum of the two pushforwards along the inclusions of $`U` and $`V` into $`X`. Neither
+of the two maps refers to the small complex, but unlike the short exact sequence of
+complexes the statement itself carries the cover hypotheses.
 :::
 
 :::proof "thm:singular-mayer-vietoris-exact-at-pair"

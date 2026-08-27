@@ -133,10 +133,12 @@ The Ford fundamental domain is
 $$`\mathcal{F} = \Big\{ z \in \mathbb{H} : -\tfrac{w+1}{2} \le \operatorname{Re} z \le \tfrac{w-1}{2},\ |z| \ge 1,\ |z+1| \ge 1 \Big\},`
 a closed hyperbolic quadrilateral: a vertical strip of width exactly $`w`, truncated
 below by the two unit circles centred at $`0` and $`-1`. Those two circles meet at the
-order-$`3` fixed point $`\rho - 1`, and the order-$`4` fixed point sits on the left edge
-of the strip. Every $`\Gamma`-orbit meets $`\mathcal{F}`, and the family of translates
-$`\{g\mathcal{F}\}` is locally finite — the two facts from which proper discontinuity is
-extracted.
+order-$`3` fixed point $`\rho - 1`, and the order-$`4` fixed point is the corner where the
+left edge of the strip meets the circle $`|z+1| = 1`. Every $`\Gamma`-orbit meets
+$`\mathcal{F}`, so the translates $`\{g\mathcal{F}\}` cover $`\mathbb{H}`, and points of
+$`\mathcal{F}` have imaginary part bounded below — the two facts the orbit space is built
+on. Local finiteness of the translates is available too, but only downstream of proper
+discontinuity, which is extracted from the matrix group instead.
 :::
 
 :::theorem "thm:triangle-geometric-representation-injective" (lean := "Mathoverflow1973.SpecialPeriods.triangleGeometricRepresentation_injective") (parent := "orbifold") (uses := "def:triangle-geometric-representation")

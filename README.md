@@ -96,6 +96,12 @@ declarations with per-declaration pages, and trust surfaces that separate what a
 established from what a person asserted (axiom audit, comparator verdict, statement
 provenance).
 
+The node prose was written by Opus 5 agents from the Lean statements, the paper and
+cluster digests, then put through an independent adversarial faithfulness pass (one
+checker per chapter, three-judge panels on disputed verdicts): 405 of 429 nodes were
+confirmed faithful as written, 23 minor slips and 1 misstatement were rewritten. The
+per-node ledger is part of the external review record (`codex-audit/`).
+
 ```sh
 cd site
 lake build Contents                                  # compiles the site against the subject

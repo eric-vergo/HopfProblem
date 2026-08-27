@@ -171,13 +171,16 @@ Only then are they glued.
 
 :::definition "def:special-regular-family" (lean := "Mathoverflow1973.SpecialPeriods.Threefold.SpecialRegularFamily") (parent := "threefold") (uses := "def:period-family-regular-data, def:special-period-map, thm:special-period-map-generator")
 The regular piece: the total space of the period-family quotient built from
-`specialPeriodMap` over the triangle-regular locus. Concretely it is the family of
-complex $`2`-tori $`\C^2/\Lambda(\tau(z),\mu(z),\beta(z))` over the complement of the
-three special base points, formed as the quotient of $`\mathbb{H} \times \C^2` by the
-combined action of the lattice and of the triangle group, the latter acting on the fibres
-through the two generator laws $`P(g_1 z) = P(z).\mathrm{step}_1` and
-$`P(g_2 z) = P(z).\mathrm{step}_2`. It is charted on $`\C \times \C^2`, Hausdorff, second
-countable, an $`\omega`-manifold, and its projection to the regular patch is proper.
+`specialPeriodMap` over the triangle-regular locus $`\mathbb{H}^{\mathrm{reg}}`, the open
+set in $`\mathbb{H}` on which the triangle group acts freely. Concretely it is the family
+of complex $`2`-tori $`\C^2/\Lambda(\tau(z),\mu(z),\beta(z))` over the complement of the
+three special base points, formed as the quotient of
+$`\mathbb{H}^{\mathrm{reg}} \times \C^2` by the combined action of the lattice and of the
+triangle group, the latter acting on the fibres through the two generator laws
+$`P(g_1 z) = P(z).\mathrm{step}_1` and $`P(g_2 z) = P(z).\mathrm{step}_2`. Deleting the
+elliptic orbits from $`\mathbb{H}` is what makes that action free — and it is exactly the
+two punctures the fillings below repair. It is charted on $`\C \times \C^2`, Hausdorff,
+second countable, an $`\omega`-manifold, and its projection to the regular patch is proper.
 :::
 
 :::definition "def:elliptic-filling-filling-space" (lean := "Mathoverflow1973.SpecialPeriods.EllipticFilling.fillingSpace") (parent := "threefold") (uses := "def:equivariant-data, def:triangle-orbit-space, thm:main-twist-admissible, thm:triangle-geometric-representation-injective")

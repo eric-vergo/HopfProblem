@@ -77,10 +77,10 @@ from $`D_N \times D_P` to $`N \times P`, where $`D_V` denotes the closed unit ba
 about the origin. The radial factor is chosen so that the attaching face is exactly a
 piece of a level set: substituting into $`q` gives
 $`q = \rho^2\|v\|^2 - \rho^2(1 + \|v\|^2)\|u\|^2`, which equals $`-\rho^2` identically on
-$`\|u\| = 1` and takes the value $`\rho^2\|v\|^2` on the core $`u = 0`. The image is the
-standard handle block sitting between the levels $`\mp\rho^2` of $`q`, with its old face
-$`S(N) \times D_P` lying in the lower level and its core disc $`D_N \times \{0\}` running
-across the block.
+$`\|u\| = 1`, equals $`-\rho^2\|u\|^2` on the core disc $`v = 0`, and equals
+$`\rho^2\|v\|^2` on the transverse disc $`u = 0`. The image is the standard handle block
+sitting between the levels $`\mp\rho^2` of $`q`, with its old face $`S(N) \times D_P`
+lying in the lower level and its core disc $`D_N \times \{0\}` running across the block.
 :::
 
 :::definition "def:morse-handle-descent-flow" (lean := "Mathoverflow1973.Smale.MorseHandle.descentFlow") (parent := "morse")
@@ -319,9 +319,10 @@ finite set, the algebraic intersection number
 $$`\sum_{x \,\in\, g^{-1}(\mathrm{belt})} \mathrm{sign}\,J(x) \;\in\; \Z,`
 where each sign is the `SignType` of a normal Jacobian: the determinant, read through a
 fixed linear identification of $`\R \times (\text{negative coordinates})` with the ambient
-of $`S^{m+1}`, of the derivative of $`g` against the belt sphere's normal coordinates. The
-count is an integer invariant of the isotopy class, whereas the cardinality of the
-intersection set is not; the whole point of the Whitney trick is to make the two agree.
+$`\R^{m+1}` of $`S^m`, of the derivative of $`g` against the belt sphere's normal
+coordinates. The count is an integer invariant of the isotopy class, whereas the
+cardinality of the intersection set is not; the whole point of the Whitney trick is to
+make the two agree.
 :::
 
 :::definition "def:smale-tubular-bigon" (lean := "Mathoverflow1973.Smale.TubularBigon") (parent := "morse") (uses := "def:whitney-pair-model-bigon")
@@ -346,9 +347,9 @@ $`3`-sphere, and suppose every circle in the lower level is nullhomotopic. Let
 $`g : S^2 \to \mathrm{UpperLevel}` be a smooth injective immersion transverse to the belt
 sphere, and let $`x_0, x_1` be intersection points with
 $$`\mathrm{sign}(x_0) \cdot \mathrm{sign}(x_1) = -1.`
-Then there is a diffeomorphism $`e` of the upper level, isotopic to the identity through
-compactly supported diffeomorphisms, such that $`g' = e \circ g` is again a smooth
-injective immersion transverse to the belt sphere with
+Then there is a diffeomorphism $`e` of the upper level, joined to the identity by a smooth
+isotopy through diffeomorphisms, such that $`g' = e \circ g` is again a smooth injective
+immersion transverse to the belt sphere with
 $$`g'^{-1}(\mathrm{belt}) \;=\; g^{-1}(\mathrm{belt}) \smallsetminus \{x_0, x_1\},`
 and with $`g'` agreeing with $`g` near every surviving intersection point — so all
 surviving signs are unchanged. The nullhomotopy hypothesis on the lower level is where
@@ -374,10 +375,11 @@ intersection point, which is exactly the hypothesis for cancelling a handle pair
 :::theorem "thm:remove-connections-of-index-le" (lean := "Mathoverflow1973.AdaptedWindows.remove_connections_of_index_le") (parent := "morse") (uses := "def:adapted-windows, def:critical-points, def:flow-construction-compact-flow, thm:exists-ambient-disjoint-diffeomorph-of-dimension, thm:exists-native-level-flow-cylinder")
 *Theorem (Smale's rearrangement lemma).* Let $`S` be an adapted window system, and let
 $`p, q` be critical points with $`f(p) < f(q)` and no critical value strictly between
-them, with $`\mathrm{index}(q) \le \mathrm{index}(p)`. Then there are a smooth vector field
-$`V` and a flow $`G` integrating it such that $`V` vanishes on the critical set, satisfies
-$`df(V) < 0` off it, agrees with the original field near every critical point, and admits
-no orbit running from $`q` down to $`p`:
+them, whose indices satisfy
+$$`1 \;\le\; \mathrm{index}(q) \;\le\; \mathrm{index}(p) \;\le\; \dim M - 1.`
+Then there are a smooth vector field $`V` and a flow $`G` integrating it such that $`V`
+vanishes on the critical set, satisfies $`df(V) < 0` off it, agrees with the original
+field near every critical point, and admits no orbit running from $`q` down to $`p`:
 $$`\neg\ \Bigl(\lim_{t \to -\infty} G_t z = q \ \wedge\ \lim_{t \to +\infty} G_t z = p\Bigr) \qquad \text{for every } z \in M.`
 Agreement of the germs at the critical points is what makes the conclusion usable: the
 Morse function, its critical points and their indices are untouched, only the connecting
