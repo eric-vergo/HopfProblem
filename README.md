@@ -84,3 +84,43 @@ lake build              # Challenge + Solution (pulls the whole HopfProblem tree
 ```
 
 The blueprint site lives in [`site/`](site/) and has its own README section below.
+
+## The blueprint site (`site/`)
+
+A browsable presentation of the formalization, generated from the Lean sources with the
+[Showcase](https://github.com/eric-vergo/Showcase) blueprint genre for
+[Verso](https://github.com/eric-vergo/verso): an introduction and seventeen chapters
+following Alpöge's paper, 429 declaration nodes with informal statements (and proof
+sketches for the main results), a dependency graph, a registry of all ~20,600
+declarations with per-declaration pages, and trust surfaces that separate what a machine
+established from what a person asserted (axiom audit, comparator verdict, statement
+provenance).
+
+```sh
+cd site
+lake build Contents                                  # compiles the site against the subject
+rm -rf _out/site && lake env lean --run Main.lean --output _out/site
+```
+
+The site pins the same toolchain and Mathlib tag as the subject and imports the
+`Solution` module by name; the generated output is fully self-contained (no off-origin
+assets). `Challenge.lean` is never imported by the site, since it states the goal with
+`sorry`.
+
+| Chapter | Subject directory |
+|---|---|
+| Introduction | — |
+| The lattice and monodromy data | `HopfProblem/Lattice/` |
+| Analytic and quotient-manifold foundations · Uniformizing the (3,4,∞) orbifold | `HopfProblem/Uniformization/`, `HopfProblem/Foundations/` |
+| The period family over the thrice-punctured line | `HopfProblem/PeriodFamily/` |
+| The toric filling at the cusp | `HopfProblem/Toric/` |
+| The logarithmic transforms at the elliptic points | `HopfProblem/Elliptic/` |
+| Assembling the threefold | `HopfProblem/Threefold/` |
+| Singular homology from scratch | `HopfProblem/HomologyTheory/` |
+| Homology of tori | `HopfProblem/TorusHomology/` |
+| The cusp fibre and its collapse | `HopfProblem/CuspFibre/` |
+| The fundamental group | `HopfProblem/Pi1/` |
+| The homology of the threefold | `HopfProblem/HomologyOfX/` |
+| The Hurewicz ladder | `HopfProblem/Hurewicz/` |
+| The homotopy equivalence with the six-sphere · Morse theory on manifolds · Cancellation and the two-critical-point theorem | `HopfProblem/Recognition/` |
+| The main theorem | `HopfProblem/MainTheorem/` |
