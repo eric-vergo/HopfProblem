@@ -9,5 +9,8 @@ The repository includes a Comparator setup, with the statement adapted from the 
 ```sh
 lake update
 lake exe cache get
+lake build lean4export
 lake exe comparator comparator/config.json
 ```
+
+[Type-check it online!](https://live.lean-lang.org/#project=mathlib-stable&url=https%3A%2F%2Fraw.githubusercontent.com%2Fplby%2FHopfProblem%2Frefs%2Fheads%2Fmaster%2FSolution.lean)
