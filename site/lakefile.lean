@@ -63,6 +63,13 @@ package Contents where
     -- honest degraded (signature / syntactic) rendering tier rather than paying for
     -- full re-elaboration 20,600 times.
     ⟨`weak.verso.blueprint.graph.includeAllDecls, true⟩,
+    -- Scale cap (d): per-declaration PAGES.  A decl page is ~7 MB here — almost entirely
+    -- its local dependency-graph payload — and emitting one for each of the ~20,600
+    -- declarations measured at ~20 pages/min (≈16 h per generation).  The registry index
+    -- stays complete; pages go to the 250 most-referenced unpresented declarations, the
+    -- rest are indexed with a "no page (over cap)" pill and a source link, and the trust
+    -- model says so.  Raise once the local graph is bounded by node count (fork follow-up).
+    ⟨`weak.verso.blueprint.declRegistry.maxDeclPages, .ofNat 250⟩,
     -- Automatic dependency inference: the subject carries no `@[blueprint]` edges, so
     -- graph provenance is machine-derived (CX-033) rather than author-declared.
     ⟨`weak.verso.blueprint.autoDeps, true⟩,
@@ -111,6 +118,11 @@ package Contents where
     -- a badge.  (This is also what keeps `Challenge.lean` — which is `sorry` — out of
     -- the site: it is never imported.)
     ⟨`weak.verso.blueprint.trust.requireAuditClean, true⟩,
+    -- CX-064: named checker identity requires a consumer-controlled pin the run record must
+    -- agree with.  `trust/kernel-identities.json` is written once by CI's publish job from the
+    -- run's own nanoda build (bootstrap) and asserted on every later run; the site reads it at
+    -- elaboration, so it also gets an `input_file` freshness edge below (CX-075).
+    ⟨`weak.verso.blueprint.trust.expectedKernelIdentities, "trust/kernel-identities.json"⟩,
     ⟨`weak.verso.blueprint.trust.ciRunUrl, ciRunUrl⟩,
     -- `verso.blueprint.trust.statementClosure` is deliberately OFF.  It runs only under
     -- an existing comparator verdict (`attachStatementClosure` is called inside the
@@ -159,10 +171,14 @@ input_file comparatorChallenge where
 input_file comparatorSolution where
   path := "../Solution.lean"
 
+input_file kernelIdentities where
+  path := "trust/kernel-identities.json"
+
 @[default_target]
 lean_lib Contents where
   needs := #[`@/formalizationYaml, `@/comparatorConfig,
-             `@/comparatorChallenge, `@/comparatorSolution]
+             `@/comparatorChallenge, `@/comparatorSolution,
+             `@/kernelIdentities]
   roots := #[`Authors, `Contents, `Chapters, `Bibliography, `Macros]
 
 @[default_target]
