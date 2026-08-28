@@ -23,7 +23,7 @@ name: CI
 #              trusted inputs (scripts/validate_comparator_result.py, CX-052),
 #              writes comparator/comparator-status.json and the checker-identity
 #              pin site/trust/kernel-identities.json from that record, and commits
-#              them back to `showcase` on push events — this is the only job with
+#              them back to `master` on push events — this is the only job with
 #              contents: write.
 #
 # Deliberately NOT in CI: the blueprint site under site/. Its `lake build
@@ -38,7 +38,7 @@ name: CI
 
 on:
   push:
-    # `showcase` carries the site and this workflow; `split` is the
+    # `master` carries the site and this workflow; `split` is the
     # upstream-PR-able branch. A push to `split` runs build + comparator and
     # stops there (the publish job is gated on the branch below), so the PR
     # branch can show a green sandboxed verdict without a write token ever
@@ -48,7 +48,7 @@ on:
     # `split` here is inert until this file is also present on `split`; it is
     # listed so that the moment it is, the intended behaviour is already
     # spelled out rather than being invented later.
-    branches: [showcase, split]
+    branches: [master, split]
     paths-ignore:
       # The publish job's own commit-back must not re-trigger this workflow. The
       # commit-back uses GITHUB_TOKEN, which does not fire `push:` — this
@@ -120,11 +120,11 @@ env:
   COMPARATOR_STATUS: "comparator/comparator-status.json"
   KERNEL_IDENTITY_PINS: "site/trust/kernel-identities.json"
   # The one branch this workflow may write to. A job-level `if:` has no access to
-  # the `env` context, so the publish job spells 'showcase' literally and a step
+  # the `env` context, so the publish job spells 'master' literally and a step
   # inside it asserts the two spellings agree — the same coupling problem
   # codex-audit CX-079 found when an event name stood in for a capability
   # predicate, in the one place this workflow still has a capability predicate.
-  PUBLISH_BRANCH: "showcase"
+  PUBLISH_BRANCH: "master"
   # mathlib-initiative/formalization.yaml, pinned by commit: a schema fetched
   # from `main` could start or stop rejecting this file without a commit here.
   # The version dispatcher (schema/formalization.schema.json) carries an $id on
@@ -1005,16 +1005,16 @@ jobs:
   # =====================================================================
   publish:
     needs: comparator
-    # `showcase` only. Spelled literally because a job-level `if:` has no access
+    # `master` only. Spelled literally because a job-level `if:` has no access
     # to the `env` context; the first step below asserts this spelling and
     # PUBLISH_BRANCH agree, so the two cannot drift apart silently (the coupling
     # problem of codex-audit CX-079, in the one place this workflow still has a
     # capability predicate). A push to `split` runs build + comparator and stops.
-    if: github.ref_name == 'showcase'
+    if: github.ref_name == 'master'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: write   # commit the status artifact back to showcase (push events only)
+      contents: write   # commit the status artifact back to master (push events only)
       actions: read     # resolve the step-level deep link into the comparator job's log
     steps:
       - name: Assert the publish branch predicate
@@ -1268,7 +1268,7 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      - name: Commit the status artifact back to showcase
+      - name: Commit the status artifact back to master
         # Only on a real push. On workflow_dispatch the refreshed files stay on
         # disk and in the artifact above, but nothing is pushed. The GITHUB_TOKEN
         # push does not re-fire `push:` (and paths-ignore double-guards it). The

@@ -17,7 +17,7 @@ workflow is split into three jobs along that boundary rather than written as one
 |-----|-------|-------|--------------|
 | `build` | trusted | `contents: read` | Pin assertions, `formalization.yaml` schema validation, the validator's own forged-record test suite, `lake build HopfProblem`, the axiom audit of `Mathoverflow1973.mathoverflow_1973`. Uploads the subject oleans. |
 | `comparator` | **untrusted** | `contents: read`, no OIDC | Builds landrun + nanoda, self-tests the sandbox, proves containment with a workflow-owned probe, then runs `leanprover/comparator` — the first elaboration of `Challenge` and `Solution` anywhere in the pipeline, inside landrun. Emits `comparator-result.json`. |
-| `publish` | trusted | `contents: write` | Re-validates that record field by field against its own trusted inputs, writes `comparator/comparator-status.json` and checks `site/trust/kernel-identities.json`, commits both back to `showcase` on push events. |
+| `publish` | trusted | `contents: write` | Re-validates that record field by field against its own trusted inputs, writes `comparator/comparator-status.json` and checks `site/trust/kernel-identities.json`, commits both back to `master` on push events. |
 
 `build` deliberately builds only the `HopfProblem` library. The package's `defaultTargets`
 are `Challenge` and `Solution`; a plain `lake build` would elaborate both in the job that
@@ -97,7 +97,7 @@ digest is still published as run evidence in `comparator/comparator-status.json`
 
 ## Triggers
 
-* `push` to `showcase` — the full three jobs, with commit-back.
+* `push` to `master` — the full three jobs, with commit-back.
 * `push` to `split` — `build` and `comparator` only; `publish` is gated on the branch, so
   the upstream-PR branch can show a green sandboxed verdict without a write token ever
   being minted for it.
