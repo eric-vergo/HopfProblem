@@ -103,19 +103,31 @@ commits `comparator/comparator-status.json` back to `master`. First run
 verifier identities change, so site-only commits do not churn it. The site's comparator
 page reads that record back (it never re-runs anything) and labels the verdict
 "CI-verified" with the run's deep link; the site itself is not built in CI (its
-registry pass alone is ~3 h at this scale). It is generated on a workstation and *served*
-by CI: `.github/workflows/site-deploy.yml` publishes
-[eric-vergo.github.io/HopfProblem](https://eric-vergo.github.io/HopfProblem/) from a
-tarball on a GitHub Release, pinned by `site/trust/site-build.json` (SHA-256, generation
-revision, fork pins). The workflow refuses the asset unless its digest is the pinned one,
-then `scripts/check_site_release.py` holds the tree's own provenance record to the
-checkout — generation revision on `master`'s history and not dirty, every
-elaboration-time trust input re-hashed against the checkout, every project-local source
-link naming the revision, the trust surfaces on disk — and runs the off-origin asset
-gates before anything is uploaded. What that does not establish is that the tarball is a
-faithful generation from the pinned revision: a workstation build is not reproduced in
-CI, and the gate authenticates what the tree says about itself, not the act of generating
-it.
+registry pass alone is a multi-hour job). Since 2026-08-28 it is generated *and* served
+by CI, from this repository alone — `ci.yml`'s `site-contents` → `site-generate` →
+`site-release` jobs run after the comparator verdict, from the same run's subject oleans —
+at [eric-vergo.github.io/HopfProblem](https://eric-vergo.github.io/HopfProblem/).
+
+GitHub Pages publishes at most 1 GB per site, so which declarations get a page is a stated
+policy in `site/lakefile.lean`, not a byte count: every one of the ~20,600 declarations is in
+the registry, the index, the axiom audit and the dependency graph, with its signature and a
+source link; **instances and private declarations have no page of their own** (typeclass
+plumbing and module-internal helpers), the remaining declarations get pages by fan-in up to
+`declRegistry.maxDeclPages`, a declaration page draws its local dependency graph only when
+the 60-node cap did not truncate it (the rail's Uses / Used-by lists always carry the whole
+neighborhood), and declaration pages carry no sidebar table of contents. The PM hub and the
+Trust-model page state the counts each policy left out.
+
+`scripts/package_site.sh` produces the tarball and the pin `site/trust/site-build.json`
+(SHA-256, generation revision, fork pins) and refuses a tree over 900 MB with a per-component
+size report (released as `size-report.txt` next to the tarball). A push of the pin deploys:
+`.github/workflows/site-deploy.yml` refuses the asset unless its digest is the pinned one,
+then `scripts/check_site_release.py` holds the tree's own provenance record to the checkout —
+generation revision on `master`'s history and not dirty, every elaboration-time trust input
+re-hashed against the checkout, every project-local source link naming the revision, the
+trust surfaces on disk — and runs the off-origin asset gates before anything is uploaded.
+The release notes name the CI run that generated the tarball, so what Pages serves is what a
+run of this repository's own workflow built from its own checkout.
 
 ## The blueprint site (`site/`)
 
@@ -138,8 +150,9 @@ per-node ledger is part of the external review record (`codex-audit/`).
 cd site
 lake build Contents                                  # compiles the site against the subject
 rm -rf _out/site && lake env lean --run Main.lean --output _out/site
-cd .. && scripts/package_site.sh                     # tarball + site/trust/site-build.json, then
-                                                     # the release / commit / push it prints
+cd .. && scripts/package_site.sh                     # what CI's site-generate job runs: tarball, pin,
+                                                     # size report, gates (the release, pin commit and
+                                                     # deploy are CI's site-release job)
 ```
 
 The site pins the same toolchain and Mathlib tag as the subject and imports the

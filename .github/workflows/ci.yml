@@ -1037,6 +1037,10 @@ jobs:
     permissions:
       contents: write   # commit the status artifact back to master (push events only)
       actions: read     # resolve the step-level deep link into the comparator job's log
+    outputs:
+      # The revision this job left on master (github.sha, or the status
+      # commit-back on top of it); the site jobs build from it.
+      site_ref: ${{ steps.site_ref.outputs.sha }}
     steps:
       - name: Assert the publish branch predicate
         run: |
@@ -1363,3 +1367,313 @@ jobs:
             -m "Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
           git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             "HEAD:${PUBLISH_BRANCH}"
+
+      - name: Record the revision left on master
+        id: site_ref
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  # =====================================================================
+  # 4. The blueprint site: built HERE, from the oleans the trusted build job
+  #    produced, then released and served. Three jobs because the hosted-runner
+  #    job limit is six hours and the registry pass alone is a multi-hour job at
+  #    this scale; each job restores the same environment (toolchain, Mathlib
+  #    olean cache, the subject oleans artifact, the fork packages) and hands the
+  #    next one its product as an artifact.
+  #
+  #    site-contents  contents: read. `lake build Contents` -- the elaboration
+  #                   pass that builds the all-declarations registry and captures
+  #                   the trust surfaces (comparator status, kernel-identity pin,
+  #                   formalization.yaml) -- against the revision the publish job
+  #                   left on master, so the site binds to the status that job
+  #                   committed. Uploads site/.lake/build.
+  #    site-generate  contents: read. Renders every page, then packages the tree
+  #                   for GitHub Pages (scripts/package_site.sh): one tarball, one
+  #                   pin, a per-component size report, and every deploy gate run
+  #                   on the result -- including the 900 MB gate for one Pages
+  #                   site. Which declarations get a page is a stated policy in
+  #                   site/lakefile.lean (no instances, no private helpers, a
+  #                   fan-in cap), not a byte count.
+  #    site-release   contents: write. Cuts the release the pin names, commits
+  #                   site/trust/site-build.json back to master (push events
+  #                   only), and dispatches site-deploy.yml, which is the ONLY
+  #                   workflow that deploys the site to Pages.
+  #
+  #    The site is never built from a workstation: what Pages serves is what this
+  #    run generated from this run's checkout, and the release notes name the run.
+  # =====================================================================
+  site-contents:
+    needs: publish
+    if: github.ref_name == 'master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    permissions:
+      contents: read
+    steps:
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: false
+
+      # The revision the publish job left on master: github.sha plus, on push
+      # events where the verdict moved, the status commit-back. The site reads
+      # that status at elaboration, so it is built from the commit that carries it.
+      - name: Check out the revision the publish job left on master
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.publish.outputs.site_ref }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Only the three forks are cached: they compile from source in ~10 minutes
+      # and change with the manifest. Mathlib's 7 GB is NOT cached -- it would
+      # churn the repository's 10 GB cache budget -- and comes from the Mathlib
+      # olean cache server each time (minutes).
+      - name: Restore the fork packages
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            site/.lake/packages/verso
+            site/.lake/packages/subverso
+            site/.lake/packages/VersoBlueprint
+          key: ${{ runner.os }}-site-forks-v1-${{ hashFiles('site/lean-toolchain', 'site/lake-manifest.json') }}
+
+      - name: Set up Lean for the site build
+        uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+        with:
+          lake-package-directory: site
+          build: "false"
+          test: false
+          lint: false
+
+      - name: Get Mathlib olean cache (site)
+        working-directory: site
+        run: lake exe cache get || true
+
+      - name: Download the subject oleans
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: subject-oleans
+          path: ${{ runner.temp }}/subject-oleans
+
+      # The site consumes HopfProblem as a path dependency; the trusted build's
+      # oleans keep `lake build Contents` from recompiling the 146-module subject.
+      - name: Unpack the subject oleans
+        run: |
+          set -euo pipefail
+          tar -xzf "${RUNNER_TEMP}/subject-oleans/subject-oleans.tar.gz" -C .
+          test -d .lake/build/lib/lean/HopfProblem
+
+      - name: Disk space before the site build
+        run: df -h /
+
+      # Probed during ELABORATION of the dashboard block (statement closure), so
+      # it has to exist before Contents is built. Not continue-on-error: a
+      # consumer that configures the surface should fail when it cannot produce it.
+      - name: Build the statement-closure tool
+        working-directory: site
+        run: lake build VersoBlueprint/statement-closure
+
+      - name: Build Contents
+        working-directory: site
+        # `-R` forces the lakefile to re-elaborate so it re-reads CI_RUN_URL
+        # fresh (Lake's config trace keys off the lakefile text, not env vars).
+        env:
+          CI_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: lake build Contents -R   # never plain `lake build`: the exe target fails the MD4Lean native link
+
+      - name: Package the site build
+        run: |
+          set -euo pipefail
+          tar -czf "${RUNNER_TEMP}/site-build.tar.gz" site/.lake/build
+          ls -l "${RUNNER_TEMP}/site-build.tar.gz"
+
+      - name: Upload the site build
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: site-build
+          path: ${{ runner.temp }}/site-build.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+
+  site-generate:
+    needs: [publish, site-contents]
+    if: github.ref_name == 'master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    permissions:
+      contents: read
+    steps:
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: false
+
+      - name: Check out the revision the publish job left on master
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.publish.outputs.site_ref }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Restore the fork packages
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            site/.lake/packages/verso
+            site/.lake/packages/subverso
+            site/.lake/packages/VersoBlueprint
+          key: ${{ runner.os }}-site-forks-v1-${{ hashFiles('site/lean-toolchain', 'site/lake-manifest.json') }}
+
+      - name: Set up Lean for the site build
+        uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+        with:
+          lake-package-directory: site
+          build: "false"
+          test: false
+          lint: false
+
+      - name: Get Mathlib olean cache (site)
+        working-directory: site
+        run: lake exe cache get || true
+
+      - name: Download the subject oleans
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: subject-oleans
+          path: ${{ runner.temp }}/subject-oleans
+
+      - name: Unpack the subject oleans
+        run: |
+          set -euo pipefail
+          tar -xzf "${RUNNER_TEMP}/subject-oleans/subject-oleans.tar.gz" -C .
+          test -d .lake/build/lib/lean/HopfProblem
+
+      - name: Download the site build
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: site-build
+          path: ${{ runner.temp }}/site-build
+
+      - name: Unpack the site build
+        run: |
+          set -euo pipefail
+          tar -xzf "${RUNNER_TEMP}/site-build/site-build.tar.gz" -C .
+          test -f site/.lake/build/lib/lean/Contents.olean
+
+      # A no-op against the unpacked build (Lake's traces are content hashes), and
+      # the safety net if the fork cache did not restore: the forks recompile to
+      # identical traces and Contents stays up to date.
+      - name: Check the site build is complete
+        working-directory: site
+        env:
+          CI_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: lake build Contents -R
+
+      - name: Generate site
+        working-directory: site
+        run: |
+          set -euo pipefail
+          rm -rf _out/site
+          lake env lean --run Main.lean --output _out/site
+          du -sh _out/site/html-multi
+
+      # Tarball, pin, size report, and every deploy gate run against the result;
+      # refuses, in minutes, what site-deploy.yml would refuse later.
+      - name: Package the site
+        run: scripts/package_site.sh "${RUNNER_TEMP}/site-release"
+
+      - name: Upload the site release
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: site-release
+          path: |
+            ${{ runner.temp }}/site-release/*.tar.gz
+            ${{ runner.temp }}/site-release/site-build.json
+            ${{ runner.temp }}/site-release/size-report.txt
+          retention-days: 7
+          if-no-files-found: error
+
+  site-release:
+    needs: [publish, site-generate]
+    if: github.ref_name == 'master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write   # the release, and the pin commit-back (push events only)
+      actions: write    # dispatch site-deploy.yml
+    steps:
+      - name: Check out the revision the publish job left on master
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.publish.outputs.site_ref }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Download the site release
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: site-release
+          path: ${{ runner.temp }}/site-release
+
+      # The pin names this release; the tarball, the pin and the size report are
+      # its assets. A re-run for the same generation revision refreshes them in place.
+      - name: Cut the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/site-release"
+          tag="$(python3 -c 'import json;print(json.load(open("site-build.json"))["release"]["tag"])')"
+          rev="$(python3 -c 'import json;print(json.load(open("site-build.json"))["generationRevision"])')"
+          [ "$rev" = "$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)" ] || { echo "the packaged site names $rev, this checkout is $(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)"; exit 1; }
+          notes="Blueprint site generated by CI run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} at ${rev}. Served by site-deploy.yml after scripts/check_site_release.py authenticates the asset against site/trust/site-build.json and the checkout. size-report.txt is the per-component size breakdown of the tree."
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber ./*.tar.gz ./site-build.json ./size-report.txt
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$rev" \
+              --title "Site build ${rev:0:7}" --notes "$notes" \
+              ./*.tar.gz ./site-build.json ./size-report.txt
+          fi
+          echo "release: $tag"
+
+      - name: Commit the site pin back to master
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cp "${RUNNER_TEMP}/site-release/site-build.json" site/trust/site-build.json
+          git add -- site/trust/site-build.json
+          if git diff --cached --quiet; then
+            echo "No change to the site pin; skipping commit."
+            exit 0
+          fi
+          short="$(python3 -c 'import json;print(json.load(open("site/trust/site-build.json"))["generationRevision"][:7])')"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit \
+            -m "site: publish the build generated at ${short}" \
+            -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:${PUBLISH_BRANCH}"
+
+      # A GITHUB_TOKEN push does not fire `push:`; a workflow_dispatch it creates
+      # does run. site-deploy.yml checks out master, reads the pin just pushed,
+      # and is the only path to the primary's Pages deployment.
+      - name: Deploy the primary (dispatch site-deploy.yml)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run site-deploy.yml --repo "$GITHUB_REPOSITORY" --ref "$PUBLISH_BRANCH"

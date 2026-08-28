@@ -131,31 +131,44 @@ retrigger the workflow.
 
 ## Deliberately not run in CI
 
-**The blueprint site under `site/` is not built here.** Its `lake build Contents` pass
-takes roughly three hours at this scale; that is not a hosted-runner workload, and it is
-generated out of band. It is *served* from here: `site-deploy.yml` (a separate workflow,
-triggered by a change to `site/trust/site-build.json` or by hand) downloads the release
-tarball that pin names, refuses it unless its digest is the pinned one before unpacking a
-byte, then runs `scripts/check_site_release.py` against the checkout — the tree's own
-`-verso-data/trust-provenance.json` must name the pinned generation revision, be clean, and
-be on `master`'s history; every elaboration-time trust input it lists must still hash at the
-checkout to what the generator read (the CX-075 property, so a comparator page quoting a
-verdict `master` has since replaced is refused, not published); every project-local source
-link in the registry must name the revision (CX-066); the probe-and-degrade surfaces must be
-on disk; the tree must be under the 1 GB GitHub Pages publishes — then the off-origin asset
-gates (`scripts/site_offline_gates.sh`), then the Pages artifact. The gate's refusals are
-covered by fixtures (`scripts/tests/test_check_site_release.py`, run at the top of the
-workflow). `scripts/package_site.sh` is the workstation half: it runs the same gate on the
-freshly packaged tree before the release exists.
+**The blueprint site under `site/` IS built here** (since 2026-08-28; before that it was
+generated out of band): `ci.yml`'s `site-contents` job runs the `lake build Contents` pass
+from the revision the publish job left on master, `site-generate` renders and packages the
+tree, and `site-release` cuts the release the pin names, commits `site/trust/site-build.json`
+back and dispatches `site-deploy.yml`. The registry's full re-elaboration is capped
+(`declRegistry.fullElabMaxDecls = 300`, recorded per declaration as a rendering tier) so the
+pass fits a hosted runner's six-hour job limit.
 
-What this does not establish is that the tarball is a faithful generation from the pinned
-revision. A workstation build is not reproduced in CI; the gate authenticates what the tree
-says about itself against `master`, not the act of generating it. That is the honest limit
-of serving an out-of-band build, and the site's trust model claims nothing more.
+The site is served from this repository alone. GitHub Pages publishes at most 1 GB per site,
+and with ~20,600 declarations that is a real budget; it is met by a stated policy in
+`site/lakefile.lean` rather than by splitting the site across repositories (which would only
+invite the question of what was hidden where): instances and private declarations have no
+page of their own, the rest get pages by fan-in up to a cap, a declaration page draws its
+local graph only when the 60-node cap did not truncate it, and declaration pages carry no
+sidebar ToC. Every declaration stays in the registry, the index, the audit and the graph, and
+the counts each rule left out are stated on the PM hub and the Trust-model page.
+`scripts/package_site.sh` refuses a tree over 900 MB and writes a per-component size report
+(`size-report.txt`, a release asset), so the cap is raised from numbers, not guesses.
 
-Everything in the source workflow that exists to protect *site generation* consequently has
-no counterpart here, and their absence is a consequence of that decision rather than an
-oversight:
+`site-deploy.yml` (a separate workflow, triggered by a change to `site/trust/site-build.json`
+or by hand) downloads the tarball that pin names, refuses it unless its digest is the pinned
+one before unpacking a byte, then runs `scripts/check_site_release.py` against the checkout —
+the tree's own `-verso-data/trust-provenance.json` must name the pinned generation revision,
+be clean, and be on `master`'s history; every elaboration-time trust input it lists must
+still hash at the checkout to what the generator read (the CX-075 property, so a comparator
+page quoting a verdict `master` has since replaced is refused, not published); every
+project-local source link in the registry must name the revision (CX-066); the
+probe-and-degrade surfaces must be on disk; the tree must be under the gate — then the
+off-origin asset gates (`scripts/site_offline_gates.sh`), then the Pages artifact. The gate's
+refusals are covered by fixtures (`scripts/tests/test_check_site_release.py`, run at the top
+of the workflow). `scripts/package_site.sh` is the same gate run in the generating job,
+before a release exists.
+
+The deploy gate authenticates what a tree says about itself against `master`; the act of
+generating it is a job of this workflow, named in the release notes, so the two together
+bind what Pages serves to a run of this repository's own CI.
+
+Of the source workflow's site-generation gates, these still have no counterpart here:
 
 * the trust-provenance gate (`check_trust_provenance.py`) and its forged-record fixtures —
   they guard against a warm `site/.lake` replaying a stale evidence page;

@@ -321,8 +321,8 @@ def main(argv=None):
     parser.add_argument(
         "--max-bytes",
         type=int,
-        default=1_000_000_000,
-        help="the published-site size GitHub Pages documents as its limit",
+        default=900_000_000,
+        help="the gate for one GitHub Pages site (the documented limit is 1 GB; deployments near it time out)",
     )
     args = parser.parse_args(argv)
 

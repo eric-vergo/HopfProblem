@@ -11,12 +11,21 @@
 # This script refuses to package anything the deploy gate would refuse, so the
 # refusal happens here, in seconds, instead of after a release was cut:
 #
-#   * the worktree must be clean and HEAD must be the revision the site's own
-#     provenance record says it was generated from, and that record must not be
-#     marked dirty -- a site that describes no commit is not published;
+#   * the worktree must be clean, the site's own provenance record must not be
+#     marked dirty (a site that describes no commit is not published), and the
+#     revision it was generated from must be HEAD or an ancestor of HEAD -- the
+#     registry's source links and the build stamp name that revision, and the CI
+#     gate holds every trust input at HEAD to what that generation read;
+#   * the tree must fit GitHub Pages: refused over 900 MB (the documented limit is
+#     1 GB and deployments near it time out), with a per-component size report
+#     (declaration pages, node pages, -verso-data, the rest) written next to the
+#     tarball so the next generation's page cap can be set from numbers;
 #   * the off-origin gates (scripts/site_offline_gates.sh) must pass;
 #   * the freshly written pin, the tarball and the tree must pass
 #     scripts/check_site_release.py exactly as CI will run it.
+#
+# In CI this is the whole packaging step of ci.yml's site-generate job; the next
+# job cuts the release and commits the pin.
 #
 # Usage, from the repository root, after `cd site && lake build Contents &&
 # rm -rf _out/site && lake env lean --run Main.lean --output _out/site`:
@@ -54,23 +63,64 @@ build = record.get("buildRevision") or {}
 print(build.get("commit", ""), "true" if build.get("dirty") else "false")
 PY
 )
-[ "$gen" = "$head" ] || die "the site was generated at ${gen:-<none>} but HEAD is $head -- regenerate under HEAD"
 [ "$dirty" = "false" ] || die "the site's provenance record is marked dirty -- regenerate from a clean worktree"
+if [ "$gen" != "$head" ]; then
+  git merge-base --is-ancestor "$gen" "$head" 2>/dev/null \
+    || die "the site was generated at ${gen:-<none>}, which is not on the history of HEAD $head -- regenerate under HEAD"
+  echo "package_site: the site was generated at ${gen:0:7}; HEAD is ${head:0:7} (the CI gate re-hashes every trust input at HEAD against that generation)"
+fi
+
+# --- Size: one repository, one GitHub Pages site -------------------------------
+mkdir -p "$out"
+python3 - "$site_root" "$out/size-report.txt" <<'PY'
+import os, sys
+root, report = sys.argv[1], sys.argv[2]
+LIMIT = 900_000_000
+def tree(path):
+    files = total = 0
+    for dirpath, _d, names in os.walk(path):
+        for n in names:
+            files += 1; total += os.path.getsize(os.path.join(dirpath, n))
+    return files, total
+rows = []
+whole = tree(root)
+for label, rel in (("declaration pages (decl/)", "decl"), ("node pages (node/)", "node"),
+                   ("-verso-data (registry, manifests, assets)", "-verso-data"),
+                   ("xref.json", "xref.json")):
+    p = os.path.join(root, rel)
+    rows.append((label,) + (tree(p) if os.path.isdir(p) else ((1, os.path.getsize(p)) if os.path.isfile(p) else (0, 0))))
+rest = (whole[0] - sum(r[1] for r in rows), whole[1] - sum(r[2] for r in rows))
+rows.append(("everything else (chapters, index, PM, trust pages)",) + rest)
+lines = ["site size report", "  {:52s} {:>7s} {:>10s}".format("component", "files", "MB")]
+for label, files, total in rows:
+    lines.append("  {:52s} {:7d} {:10.1f}".format(label, files, total / 1e6))
+lines.append("  {:52s} {:7d} {:10.1f}".format("TOTAL", whole[0], whole[1] / 1e6))
+decl = rows[0]
+if decl[1]:
+    lines.append("  mean declaration page: {:.1f} KB; headroom to the 900 MB gate at that size: {:d} more page(s)".format(
+        decl[2] / decl[1] / 1e3, max(0, int((LIMIT - whole[1]) / (decl[2] / decl[1])))))
+text = "\n".join(lines)
+print(text)
+open(report, "w", encoding="utf-8").write(text + "\n")
+if whole[1] > LIMIT:
+    print("package_site: {} bytes exceeds the {} byte gate for one GitHub Pages site".format(whole[1], LIMIT))
+    sys.exit(1)
+PY
 
 bash scripts/site_offline_gates.sh "$site_root"
 
-short="${head:0:7}"
+short="${gen:0:7}"
 tag="site-$(date -u +%Y%m%d)-$short"
 asset="site-$short.tar.gz"
 mkdir -p "$out"
 tarball="$out/$asset"
 rm -f "$tarball"
 # Deterministic member order; the hash is what the pin vouches for.
-( cd site/_out/site && find html-multi -type f | LC_ALL=C sort | tar -czf "$tarball" --no-recursion -T - )
+( cd site/_out/site && find html-multi -type f | LC_ALL=C sort | tar -cf - -T - | gzip -n -6 > "$tarball" )
 
 repository="$(git remote get-url origin | sed -E 's#^(https://github\.com/|git@github\.com:)##; s#\.git$##')"
 
-python3 - "$pin" "$tarball" "$site_root" "$head" "$tag" "$asset" <<'PY'
+python3 - "$pin" "$tarball" "$site_root" "$gen" "$tag" "$asset" <<'PY'
 import datetime, hashlib, json, os, sys
 
 pin, tarball, site_root, head, tag, asset = sys.argv[1:7]
@@ -110,6 +160,7 @@ with open(pin, "w", encoding="utf-8") as handle:
 print("wrote {}: {} ({} bytes, {} files) generated at {}".format(pin, asset, document["release"]["bytes"], files, head[:7]))
 PY
 
+cp "$pin" "$out/site-build.json"
 python3 scripts/check_site_release.py \
   --pin "$pin" --tarball "$tarball" --site-root "$site_root" \
   --repo-root "$root" --head "$head" --repository "$repository"
@@ -119,9 +170,9 @@ cat <<EOF
 Packaged. To publish (in this order -- the pin push triggers the deploy, so the
 release must exist first):
 
-  gh release create "$tag" "$tarball" --repo "$repository" \\
+  gh release create "$tag" --target "$gen" "$tarball" "$out/site-build.json" --repo "$repository" \\
     --title "Site build $short" \\
-    --notes "Blueprint site generated at $head. Deployed by .github/workflows/site-deploy.yml after scripts/check_site_release.py authenticates it against site/trust/site-build.json and this checkout."
+    --notes "Blueprint site generated at $gen. Deployed by .github/workflows/site-deploy.yml after scripts/check_site_release.py authenticates it against site/trust/site-build.json and this checkout."
   git add "$pin" && git commit -m "site: publish the build generated at $short"
   git push origin master
 EOF
