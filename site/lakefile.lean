@@ -63,13 +63,15 @@ package Contents where
     -- honest degraded (signature / syntactic) rendering tier rather than paying for
     -- full re-elaboration 20,600 times.
     ⟨`weak.verso.blueprint.graph.includeAllDecls, true⟩,
-    -- Scale cap (d): per-declaration PAGES.  Before the local graph was bounded, a decl
-    -- page was ~7 MB here — almost entirely its local dependency-graph payload — and
-    -- emitting one for each of the ~20,600 declarations measured at ~20 pages/min (≈16 h
-    -- per generation).  The registry index stays complete; pages go to the 250
-    -- most-referenced unpresented declarations, the rest are indexed with a "no page
-    -- (over cap)" pill and a source link, and the trust model says so.
-    ⟨`weak.verso.blueprint.declRegistry.maxDeclPages, .ofNat 250⟩,
+    -- Scale cap (d): per-declaration PAGES — OFF (0 = a page for every declaration).
+    -- Before the local graph was bounded, a decl page was ~7 MB here — almost entirely
+    -- its local dependency-graph payload — and emitting one per declaration measured at
+    -- ~20 pages/min (≈16 h per generation), so the cap stood at 250.  With cap (e) below
+    -- the pages are small enough to emit all ~20,600 and to serve them: the generated
+    -- `decl/` tree is sharded across sibling GitHub Pages repos at packaging time
+    -- (scripts/package_site.sh; one origin, several path prefixes) because a single
+    -- Pages site is limited to 1 GB.
+    ⟨`weak.verso.blueprint.declRegistry.maxDeclPages, .ofNat 0⟩,
     -- Scale cap (e): the per-page LOCAL GRAPH, by node count.  The radius-2 neighborhood
     -- of a hub declaration in a 20,600-node graph is thousands of nodes — a multi-megabyte
     -- page nobody can read, and a site GitHub Pages will not publish (1 GB).  The page
