@@ -80,43 +80,14 @@ package Contents where
     -- Validate formalization.yaml against the v0.4 subset check on every build: a
     -- metadata page must not present a document this build could not read.
     ⟨`weak.verso.blueprint.trust.validateFormalizationYaml, true⟩,
-    -- The comparator STATUS artifact is deliberately NOT configured yet.  This repo has
-    -- `comparator/config.json` but no `comparator/comparator-status.json`: no verifying
-    -- run has happened.  `verso.blueprint.trust.comparatorStatus` is one of the two
-    -- options that HARD-ERROR when set to a path with no file at it (TrustStrip.lean
-    -- `elabTrustData?`) — by design, so a configured signal cannot silently degrade into
-    -- a probe.  Uncomment the line below, together with the matching `input_file`
-    -- freshness edge and its entry in `needs`, in the same commit that lands the first
-    -- status artifact:
-    --
-    --   ⟨`weak.verso.blueprint.trust.comparatorStatus,
-    --     "../comparator/comparator-status.json"⟩,
-    --
-    -- ⚠️ Before enabling it, decide what to do about `solutionFile` below: the
-    -- comparator page embeds the Solution verbatim, and this Solution is a single
-    -- 13 MB / 248,818-line module.
-    --
-    -- The config / Challenge / Solution paths below probe-and-degrade and only attach
-    -- when a comparator verdict exists, so they are inert until the status lands.
-    ⟨`weak.verso.blueprint.trust.comparatorConfig, "../comparator/config.json"⟩,
-    ⟨`weak.verso.blueprint.trust.challengeFile, "../Challenge.lean"⟩,
-    ⟨`weak.verso.blueprint.trust.solutionFile, "../Solution.lean"⟩,
-    -- comparator.live project id for the "check this claim yourself" permalinks on the
-    -- comparator page: "mathlib-stable" is the toolchain-matched Lean + Mathlib
-    -- environment there.  Links only — nothing is fetched at build time and nothing
-    -- off-origin is emitted into the site.
-    ⟨`weak.verso.blueprint.trust.comparatorLiveProject, "mathlib-stable"⟩,
-    -- Single-topic blueprint: `verso.blueprint.trust.requireConnected` stays at its
-    -- default `true`, so the authored `uses` graph must be one component.  (The gate
-    -- runs over author-written nodes only; the machine-derived supporting nodes are
-    -- excluded — GraphChecks.lean.)
-    --
-    -- The build-time axiom audit (`Lean.collectAxioms` over every presented declaration,
-    -- every registry entry, and every declaration named in formalization.yaml) is
-    -- advisory by default.  The subject's own `#print axioms` line claims the standard
-    -- three, so here a stray `sorryAx` or nonstandard axiom is a build error instead of
-    -- a badge.  (This is also what keeps `Challenge.lean` — which is `sorry` — out of
-    -- the site: it is never imported.)
+    -- The comparator STATUS artifact: written by CI's publish job from the run's own
+    -- evidence (first run 33136024687, 2026-08-28) and committed back to `master`.  This
+    -- is one of the two options that HARD-ERROR when set to a path with no file at it
+    -- (TrustStrip.lean `elabTrustData?`) — by design, so a configured signal cannot
+    -- silently degrade into a probe.  Its `input_file` freshness edge is in `needs`.
+    -- The Solution the comparator page embeds is the 62-line aggregator (the split
+    -- module tree is presented through the registry), so verbatim embedding is cheap.
+    ⟨`weak.verso.blueprint.trust.comparatorStatus, "../comparator/comparator-status.json"⟩,
     ⟨`weak.verso.blueprint.trust.requireAuditClean, true⟩,
     -- CX-064: named checker identity requires a consumer-controlled pin the run record must
     -- agree with.  `trust/kernel-identities.json` is written once by CI's publish job from the
@@ -124,11 +95,12 @@ package Contents where
     -- elaboration, so it also gets an `input_file` freshness edge below (CX-075).
     ⟨`weak.verso.blueprint.trust.expectedKernelIdentities, "trust/kernel-identities.json"⟩,
     ⟨`weak.verso.blueprint.trust.ciRunUrl, ciRunUrl⟩,
-    -- `verso.blueprint.trust.statementClosure` is deliberately OFF.  It runs only under
-    -- an existing comparator verdict (`attachStatementClosure` is called inside the
-    -- `trust.comparator.isSome` branch), so with no status artifact it would be dead
-    -- configuration.  Turn it on with the status artifact, after `lake build
-    -- «statement-closure»`; it probe-and-degrades when the tool is absent.
+    -- The meaning closure of the certified claim (F1): what a reader must read to know
+    -- what `Mathoverflow1973.mathoverflow_1973` SAYS.  Computed by the fork's
+    -- `statement-closure` executable in a subprocess importing exactly the challenge
+    -- chain's declared imports; labelled bound-to-the-verdict only when the chain it hashed
+    -- matches the run record's `challenge_chain`.  Probe-and-degrade when the tool is absent.
+    ⟨`weak.verso.blueprint.trust.statementClosure, true⟩,
     ⟨`weak.verso.code.warnLineLength, .ofNat 0⟩
   ]
 
@@ -174,11 +146,14 @@ input_file comparatorSolution where
 input_file kernelIdentities where
   path := "trust/kernel-identities.json"
 
+input_file comparatorStatus where
+  path := "../comparator/comparator-status.json"
+
 @[default_target]
 lean_lib Contents where
   needs := #[`@/formalizationYaml, `@/comparatorConfig,
              `@/comparatorChallenge, `@/comparatorSolution,
-             `@/kernelIdentities]
+             `@/kernelIdentities, `@/comparatorStatus]
   roots := #[`Authors, `Contents, `Chapters, `Bibliography, `Macros]
 
 @[default_target]
