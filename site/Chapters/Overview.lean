@@ -17,6 +17,26 @@ import VersoBlueprint
 import Macros
 import Bibliography
 import Solution
+-- The overview's `{blueprint_overview}` checks every milestone member against the node
+-- registry at ITS OWN elaboration, so the chapters that declare those nodes must be in
+-- scope here (reading order is set by Contents.lean, not by imports).
+import Chapters.Lattice
+import Chapters.AnalyticFoundations
+import Chapters.Orbifold
+import Chapters.PeriodFamily
+import Chapters.ToricFilling
+import Chapters.LogTransforms
+import Chapters.Threefold
+import Chapters.HomologyTheory
+import Chapters.TorusHomology
+import Chapters.CuspFibre
+import Chapters.FundamentalGroup
+import Chapters.HomologyOfX
+import Chapters.HurewiczLadder
+import Chapters.HomotopyEquivalence
+import Chapters.MorseTheory
+import Chapters.Cancellation
+import Chapters.MainTheorem
 
 open Verso.Genre
 open Verso.Genre.Manual hiding citep citet citehere
