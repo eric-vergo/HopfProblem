@@ -85,6 +85,26 @@ lake build              # Challenge + Solution (pulls the whole HopfProblem tree
 
 The blueprint site lives in [`site/`](site/) and has its own README section below.
 
+
+## Continuous integration and the comparator verdict
+
+`.github/workflows/ci.yml` (on this fork; see `.github/README-ci.md`) is the a362583
+trust-boundary topology ported to this layout: a trusted `build` job (schema-pinned
+`formalization.yaml` check, root build, axiom audit, uploaded oleans), a `comparator` job
+with **no write permissions** that rebuilds `Challenge` and `Solution` cold inside a
+Landlock sandbox (`landrun` `811cfff5`), exports them, and replays the certified theorem
+with both the Lean kernel and the independent `nanoda` kernel (`05055695`), and a
+`publish` job — the only one with `contents: write` — that revalidates the run record and
+commits `comparator/comparator-status.json` back to `master`. First run
+([33136024687](https://github.com/eric-vergo/HopfProblem/actions/runs/33136024687),
+2026-08-28): build 41 min, sandboxed comparator 18 min, verdict **verified** for
+`Mathoverflow1973.mathoverflow_1973` with axioms `propext`, `Classical.choice`,
+`Quot.sound`. The record is rewritten only when the verdict, the input hashes or the
+verifier identities change, so site-only commits do not churn it. The site's comparator
+page reads that record back (it never re-runs anything) and labels the verdict
+"CI-verified" with the run's deep link; the site itself is not built in CI (its
+registry pass alone is ~3 h at this scale).
+
 ## The blueprint site (`site/`)
 
 A browsable presentation of the formalization, generated from the Lean sources with the
