@@ -1,0 +1,1296 @@
+name: CI
+
+# Three jobs, split along the trust boundary (codex-audit CX-012: Lean
+# elaboration is arbitrary code execution, so the untrusted comparator modules
+# must not be elaborated in a job that holds a write token, and must not be
+# elaborated at all before the sandbox confines them):
+#
+#   build      TRUSTED. Pin assertions, formalization.yaml schema validation, the
+#              HopfProblem library build and the axiom audit of the certified
+#              theorem. Builds only the subject library — never Challenge or
+#              Solution — and hands its oleans to the next job as an artifact.
+#              contents: read.
+#   comparator UNTRUSTED. The first elaboration of Challenge and Solution happens
+#              here and happens inside landrun, driven by leanprover/comparator.
+#              No write token, no OIDC. Fails closed unless the AF_UNIX guard is
+#              available (CX-048), gates the sandbox on a deterministic loopback
+#              network canary (CX-049), establishes containment BEFORE any
+#              repository Lean is elaborated with a workflow-owned probe
+#              (CX-050/CX-051), hashes every executable and certified input
+#              immediately before and after the run, and emits
+#              comparator-result.json as the sole evidence record.
+#   publish    TRUSTED. Validates the result record field by field against its own
+#              trusted inputs (scripts/validate_comparator_result.py, CX-052),
+#              writes comparator/comparator-status.json and the checker-identity
+#              pin site/trust/kernel-identities.json from that record, and commits
+#              them back to `showcase` on push events — this is the only job with
+#              contents: write.
+#
+# Deliberately NOT in CI: the blueprint site under site/. Its `lake build
+# Contents` pass is ~3 h at this scale and its output is ~20K pages, which is
+# not a hosted-runner workload; it is generated and published out of band. Every
+# a362583 gate that exists to protect that generation (the trust-provenance gate
+# of CX-075/CX-078, the source-link revision gate of CX-066, the deploy-predicate
+# coupling of CX-079, the publish-job Lean setup of CX-072, the off-origin asset
+# gates) therefore has no counterpart here. See .github/README-ci.md.
+#
+# Ported from eric-vergo/OEIS-A362583-Irrationality .github/workflows/ci.yml.
+
+on:
+  push:
+    # `showcase` carries the site and this workflow; `split` is the
+    # upstream-PR-able branch. A push to `split` runs build + comparator and
+    # stops there (the publish job is gated on the branch below), so the PR
+    # branch can show a green sandboxed verdict without a write token ever
+    # being minted for it.
+    #
+    # NOTE: Actions runs the workflow file FROM THE PUSHED BRANCH. Listing
+    # `split` here is inert until this file is also present on `split`; it is
+    # listed so that the moment it is, the intended behaviour is already
+    # spelled out rather than being invented later.
+    branches: [showcase, split]
+    paths-ignore:
+      # The publish job's own commit-back must not re-trigger this workflow. The
+      # commit-back uses GITHUB_TOKEN, which does not fire `push:` — this
+      # paths-ignore is the belt-and-braces second guard.
+      - 'comparator/comparator-status.json'
+      - 'site/trust/kernel-identities.json'
+  workflow_dispatch:
+
+# Deny by default; every job re-declares exactly what it needs.
+permissions:
+  contents: read
+
+# Serialize per-ref and never cancel in-progress: a cancelled run could
+# interrupt the status commit-back.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Zouuup/landrun v0.1.17. Bump deliberately; the verifier cache key derives
+  # from these SHAs, so a bump forces a rebuild.
+  LANDRUN_REF: "811cfff51ceaf3d9843708aa6d22e9b84ccac8b4"
+  # ammkrn/nanoda_lib default-branch HEAD, carrying the kernel fixes that match
+  # the Lean version this project pins. The Lean kernel that replays the export
+  # inside the comparator is the toolchain's own (v4.33.0) — nanoda is the
+  # INDEPENDENT second kernel, and the only part of the replay that is not the
+  # same implementation checking its own work. Verifier currency is a standing
+  # invariant: this pin must postdate the newest Lean kernel fix, and must be
+  # re-pinned deliberately whenever lean-toolchain moves.
+  NANODA_REF: "05055695879dfebb6628a67da88ceca6cd6b0421"
+  # The repository nanoda is built from, as the identity record and the site's
+  # pin both spell it (codex-audit CX-064).
+  NANODA_REPOSITORY: "https://github.com/ammkrn/nanoda_lib"
+  # leanprover/comparator. Unlike a362583, this repository does not check the
+  # tool out: it is a LAKE DEPENDENCY (`require Comparator` in lakefile.toml),
+  # so it is built from the project workspace with the project's own toolchain
+  # and the effective pin is the `rev` recorded in lake-manifest.json. These two
+  # constants are what the "Assert the comparator tool pin" step holds that
+  # manifest to, and what `tool_ref` / `tool_sha` record. COMPARATOR_TOOL_REF is
+  # the human-readable name of that commit — resolved with `git ls-remote
+  # https://github.com/leanprover/comparator.git refs/tags/v4.33.0` (lightweight
+  # tag; no peeled `^{}` entry). Bump together.
+  COMPARATOR_TOOL_REF: "v4.33.0"
+  COMPARATOR_TOOL_SHA: "3927ad383f208ae977c340a91c48ac9b497d2097"
+  # lean4export is a transitive dependency of the comparator, pinned in this
+  # repository's lake-manifest.json at an `inputRev` of `master` — i.e. an
+  # ordinary `lake update` would move it silently. It produces the kernel export
+  # both kernels then replay, so it is verifier machinery and is held to the
+  # same standard as the other three.
+  LEAN4EXPORT_REF: "15f6055e299ad5b89345e533cc2192f4cc00f659"
+  # The comparator configuration this run certifies. Single source of truth: the
+  # "Run comparator" step invokes exactly this file, the hash manifest covers it
+  # and the status refresh copies its contents, so the published artifact can
+  # never describe a different config than the one that was checked.
+  COMPARATOR_CONFIG: "comparator/config.json"
+  # Same config with `solution_module` swapped for the sandbox regression
+  # fixture; see the "Denied-write probe" step.
+  COMPARATOR_PROBE_CONFIG: "comparator/config-probe.json"
+  # The challenge chain this project certifies — one file, since the Challenge
+  # imports only Mathlib and nothing of its own. A variable rather than a literal
+  # because it has two consumers that must not drift: the input-hash manifest,
+  # and the `challenge_chain` the status refresh records for the site's
+  # statement-closure surface to bind against. NOTE the layout difference from
+  # a362583: Challenge.lean and Solution.lean live at the REPOSITORY ROOT here.
+  COMPARATOR_CHALLENGE: "Challenge.lean"
+  COMPARATOR_SOLUTION: "Solution.lean"
+  # The evidence artifact the blueprint site quotes, and the checker-identity pin
+  # it authenticates run records against (CX-064).
+  COMPARATOR_STATUS: "comparator/comparator-status.json"
+  KERNEL_IDENTITY_PINS: "site/trust/kernel-identities.json"
+  # The one branch this workflow may write to. A job-level `if:` has no access to
+  # the `env` context, so the publish job spells 'showcase' literally and a step
+  # inside it asserts the two spellings agree — the same coupling problem
+  # codex-audit CX-079 found when an event name stood in for a capability
+  # predicate, in the one place this workflow still has a capability predicate.
+  PUBLISH_BRANCH: "showcase"
+  # mathlib-initiative/formalization.yaml, pinned by commit: a schema fetched
+  # from `main` could start or stop rejecting this file without a commit here.
+  # The version dispatcher (schema/formalization.schema.json) carries an $id on
+  # `main`, so relative $refs inside it would resolve back to `main` and defeat
+  # the pin — validate against the versioned schema directly instead, and assert
+  # separately that formalization.yaml declares that version.
+  FORMALIZATION_SCHEMA_REF: "99c678e569c7c4c0772db297c5ddd5e4c9b6322e"
+  FORMALIZATION_SCHEMA_VERSION: "v0.4"
+  CHECK_JSONSCHEMA_VERSION: "0.38.0"
+
+jobs:
+  # =====================================================================
+  # 1. Trusted build: assertions + the subject library. No untrusted Lean.
+  # =====================================================================
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: read
+    steps:
+      # Reclaim disk BEFORE anything else. Mathlib plus this subject's oleans is
+      # a large working set. Dropping the toolchains this job never touches
+      # (Android SDK/NDK, .NET, GHC/Haskell) plus large apt packages frees
+      # ~20-25 GB. Keep the hosted tool-cache (elan/go/cargo live outside it but
+      # removing it is slow for no gain here), Docker images (removal is slow),
+      # and swap (Mathlib elaboration is memory-heavy).
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: false
+
+      - name: Disk space after cleanup
+        run: df -h /
+
+      # Every third-party action below is pinned by commit SHA with the tag it
+      # corresponded to in a trailing comment (resolved via
+      # `git ls-remote https://github.com/<owner>/<repo>.git refs/tags/<tag>`;
+      # all of them are lightweight tags, so the listed object IS the commit).
+      # Marketplace major-version tags are mutable pointers: `@v5` is a promise
+      # about compatibility, not about code.
+      - name: Check out this repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      # --- Pin assertions ----------------------------------------------------
+      # The comparator tool is a lake dependency here, so what actually decides
+      # which tool runs is lake-manifest.json — not the `rev` in lakefile.toml,
+      # which Lake only consults when the manifest is absent. Both verifier
+      # packages are held to their pinned commits, and the tool's tag is
+      # required to keep naming the commit this repository publishes as its
+      # name: a tag is a mutable pointer, and what this repository certifies
+      # must not change because someone upstream moved one.
+      - name: Assert the comparator tool pin
+        run: |
+          set -euo pipefail
+          rev="$(jq -r '.packages[] | select(.name == "Comparator") | .rev' lake-manifest.json)"
+          input="$(jq -r '.packages[] | select(.name == "Comparator") | .inputRev' lake-manifest.json)"
+          export_rev="$(jq -r '.packages[] | select(.name == "lean4export") | .rev' lake-manifest.json)"
+          if [ "$rev" != "$COMPARATOR_TOOL_SHA" ]; then
+            echo "lake-manifest.json pins Comparator at $rev, this workflow certifies $COMPARATOR_TOOL_SHA"
+            exit 1
+          fi
+          if [ "$input" != "$COMPARATOR_TOOL_REF" ]; then
+            echo "lake-manifest.json records Comparator inputRev '$input', expected ${COMPARATOR_TOOL_REF}"
+            exit 1
+          fi
+          if [ "$export_rev" != "$LEAN4EXPORT_REF" ]; then
+            echo "lake-manifest.json pins lean4export at $export_rev, this workflow certifies ${LEAN4EXPORT_REF}"
+            echo "(its inputRev is 'master', so an ordinary lake update moves it without saying so)"
+            exit 1
+          fi
+          # Annotated tags report the commit under the peeled `^{}` ref,
+          # lightweight tags directly — accept whichever is present, require the
+          # tag to exist.
+          refs="$(git ls-remote https://github.com/leanprover/comparator.git \
+                    "refs/tags/${COMPARATOR_TOOL_REF}" "refs/tags/${COMPARATOR_TOOL_REF}^{}")"
+          printf '%s\n' "$refs"
+          resolved="$(printf '%s\n' "$refs" \
+            | awk -v t="refs/tags/${COMPARATOR_TOOL_REF}^{}" '$2 == t { print $1 }')"
+          if [ -z "$resolved" ]; then
+            resolved="$(printf '%s\n' "$refs" \
+              | awk -v t="refs/tags/${COMPARATOR_TOOL_REF}" '$2 == t { print $1 }')"
+          fi
+          if [ -z "$resolved" ]; then
+            echo "tag ${COMPARATOR_TOOL_REF} no longer exists in leanprover/comparator"
+            exit 1
+          fi
+          if [ "$resolved" != "$COMPARATOR_TOOL_SHA" ]; then
+            echo "tag ${COMPARATOR_TOOL_REF} moved: it now names $resolved, we pin $COMPARATOR_TOOL_SHA"
+            exit 1
+          fi
+          echo "comparator pin OK: ${COMPARATOR_TOOL_REF} = ${COMPARATOR_TOOL_SHA}"
+
+      # Prose that states a pin must state the true one. The site shares the
+      # subject's oleans, so the two toolchain files are not merely conventionally
+      # equal — a divergence would mean the site cannot load what it presents.
+      - name: Assert stated pins match lean-toolchain
+        run: |
+          set -euo pipefail
+          # Compare the toolchain STRINGS, not the bytes: the subject's
+          # lean-toolchain carries a trailing blank line and the site's does not,
+          # which `cmp` would call a disagreement and elan does not.
+          root_tc="$(tr -d '[:space:]' < lean-toolchain)"
+          site_tc="$(tr -d '[:space:]' < site/lean-toolchain)"
+          if [ "$root_tc" != "$site_tc" ]; then
+            echo "lean-toolchain ('$root_tc') and site/lean-toolchain ('$site_tc') disagree."
+            echo "The site loads the subject's oleans directly, so a divergence here is not a"
+            echo "convention: it is a site that cannot read what it presents."
+            exit 1
+          fi
+          toolchain="${root_tc#*:}"  # leanprover/lean4:v4.33.0 -> v4.33.0
+          files=(README.md formalization.yaml site/Chapters/*.lean)
+          # (a) A version named in a "pinned …" sentence must be the toolchain.
+          #     Whole-file match (`-0777`, `/s`): these sentences wrap across
+          #     lines, so a line-oriented grep would miss them.
+          bad="$(perl -0777 -ne 'while (/[Pp]inned.{0,120}?(v4\.\d+\.\d+)/gs) { print "$ARGV: $1\n" }' \
+                   "${files[@]}" | grep -v ": ${toolchain}\$" || true)"
+          if [ -n "$bad" ]; then
+            echo "stated pin disagrees with lean-toolchain (${toolchain}):"
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+          # (b) No stray toolchain-shaped version anywhere in those files. The
+          #     only legitimate ones are the toolchain and the comparator tag
+          #     (which the repro instructions quote); here they coincide.
+          stray="$(grep -RhoE 'v4\.[0-9]+\.[0-9]+' "${files[@]}" | sort -u \
+                   | grep -vxF -e "$toolchain" -e "$COMPARATOR_TOOL_REF" || true)"
+          if [ -n "$stray" ]; then
+            echo "unrecognised version token(s) in reader-facing prose:"
+            printf '%s\n' "$stray"
+            exit 1
+          fi
+          echo "stated pins agree with lean-toolchain (${toolchain})."
+
+      # The publish job's validator decides what becomes a dated verifier claim,
+      # so its rejection behaviour is itself CI-checked, here, in seconds, before
+      # anything expensive runs. The fixtures are forged result records that a
+      # weaker validator accepts (codex-audit CX-052).
+      - name: Test the comparator result validator against forged records
+        run: python3 scripts/tests/test_validate_comparator_result.py
+
+      # formalization.yaml is read by third parties (and by the blueprint's
+      # metadata page) as structured data, so it has to actually satisfy the
+      # published schema rather than merely look like it does.
+      - name: Validate formalization.yaml against the pinned schema
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          declared="$(grep -m1 '^version:' formalization.yaml | tr -d ' "' | cut -d: -f2)"
+          if [ "$declared" != "$FORMALIZATION_SCHEMA_VERSION" ]; then
+            echo "formalization.yaml declares version '$declared' but CI validates against ${FORMALIZATION_SCHEMA_VERSION}"
+            exit 1
+          fi
+          pipx install "check-jsonschema==${CHECK_JSONSCHEMA_VERSION}"
+          check-jsonschema \
+            --schemafile "https://raw.githubusercontent.com/mathlib-initiative/formalization.yaml/${FORMALIZATION_SCHEMA_REF}/schema/${FORMALIZATION_SCHEMA_VERSION}.schema.json" \
+            formalization.yaml
+
+      # Installs elan + the pinned toolchain, restores the Mathlib olean cache
+      # and builds the subject library. `build-args: HopfProblem` is load-bearing:
+      # the package's defaultTargets are Challenge and Solution, and a plain
+      # `lake build` would elaborate both HERE (CX-012) — their first elaboration
+      # must happen inside the comparator's sandbox, in the next job, which holds
+      # no write token.
+      #
+      # lean-action's own `axiom-audit` is off because it would be vacuous: it
+      # audits the root namespace auto-detected from the first lean_lib, which is
+      # `HopfProblem`, and every declaration in this subject lives under
+      # `Mathoverflow1973`. The audit is done explicitly in the next step instead.
+      - name: Set up Lean and build HopfProblem
+        uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+        with:
+          lake-package-directory: .
+          build-args: "HopfProblem"
+          test: false
+          lint: false
+          axiom-audit: "false"
+
+      # The axiom audit of the certified theorem, run against the oleans just
+      # built and NOT by elaborating Solution.lean — Solution is one of the two
+      # modules whose first elaboration belongs inside the sandbox. The probe
+      # module is written here, by this workflow, and imports only the subject
+      # library; the theorem it audits and the axioms it permits are read from
+      # the comparator config, so an allowlist that grows without the config
+      # saying so is caught here rather than at the verifier.
+      #
+      # Set equality, not containment: `permitted_axioms` is the upper bound the
+      # comparator enforces, and this repository additionally claims the proof
+      # reaches exactly the standard three. `sorryAx` (a `sorry`) and
+      # `Lean.ofReduceBool` (a `native_decide`) fail this step by construction.
+      - name: Audit the axioms of the certified theorem
+        run: |
+          set -euo pipefail
+          thm="$(jq -r '.theorem_names[0]' "$COMPARATOR_CONFIG")"
+          test -n "$thm"
+          printf 'import HopfProblem\n#print axioms %s\n' "$thm" > "${RUNNER_TEMP}/AxiomAudit.lean"
+          cat "${RUNNER_TEMP}/AxiomAudit.lean"
+          lake env lean "${RUNNER_TEMP}/AxiomAudit.lean" > "${RUNNER_TEMP}/axioms.txt" 2>&1
+          cat "${RUNNER_TEMP}/axioms.txt"
+          # LC_ALL=C, because the comparison is against jq's `sort`, which orders
+          # by codepoint. Under a locale whose collation folds case (en_US puts
+          # `propext` between `Classical.choice` and `Quot.sound`) the two sides
+          # would disagree on ordering alone and fail an audit that passed.
+          got="$(sed -n 's/.*depends on axioms: \[\(.*\)\].*/\1/p' "${RUNNER_TEMP}/axioms.txt" \
+                 | tr -d ' ' | tr ',' '\n' | LC_ALL=C sort | paste -sd, -)"
+          want="$(jq -r '.permitted_axioms | sort | join(",")' "$COMPARATOR_CONFIG")"
+          if [ -z "$got" ]; then
+            echo "could not read an axiom list for ${thm} out of the #print axioms output above."
+            echo "if the theorem now depends on no axioms at all, that is a change to the claim"
+            echo "and comparator/config.json has to say so."
+            exit 1
+          fi
+          if [ "$got" != "$want" ]; then
+            echo "axiom audit FAILED for ${thm}"
+            echo "  depends on: ${got}"
+            echo "  config permits: ${want}"
+            exit 1
+          fi
+          echo "axiom audit OK: ${thm} depends on exactly ${got}"
+
+      # The subject oleans are a trusted input to the comparator job: the
+      # sandboxed `lake build Solution` imports HopfProblem, and rebuilding a
+      # 146-module Mathlib-heavy library inside the sandbox would add hours to
+      # every run for nothing. Ship them as a tarball so the artifact roundtrip
+      # cannot drop hidden files or perturb the paths and mtimes Lake's traces
+      # rest on.
+      - name: Package the subject oleans
+        run: |
+          set -euo pipefail
+          tar -czf "${RUNNER_TEMP}/subject-oleans.tar.gz" .lake/build
+          ls -l "${RUNNER_TEMP}/subject-oleans.tar.gz"
+
+      - name: Upload the subject oleans
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: subject-oleans
+          path: ${{ runner.temp }}/subject-oleans.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Disk space after build
+        run: df -h /
+
+  # =====================================================================
+  # 2. Untrusted verification: the first elaboration of Challenge and
+  #    Solution, inside landrun, with no write token and no OIDC.
+  # =====================================================================
+  comparator:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      # Read only, and nothing else: this is the job that runs code the
+      # comparator's threat model treats as hostile.
+      contents: read
+    steps:
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: false
+
+      - name: Disk space after cleanup
+        run: df -h /
+
+      # The pinned comparator documents its guarantee under a systemd-run wrapper
+      # with RestrictAddressFamilies=~AF_UNIX, and says the restriction guards a
+      # known landrun escape. Whether the runner happens to have a user manager
+      # session must not silently change the security property behind an
+      # unchanged `verified` verdict (codex-audit CX-048), so the probe is a gate
+      # rather than a hint and it runs first: nothing untrusted is elaborated in
+      # this job unless the guard is available. The result record carries
+      # af_unix_guard, and the publish validator requires it to be "active".
+      - name: Assert the AF_UNIX guard is available
+        run: |
+          set -euo pipefail
+          if ! timeout 30 systemd-run --user --pipe --wait --collect \
+                 -p RestrictAddressFamilies=~AF_UNIX -- true >/dev/null 2>&1; then
+            echo "systemd-run --user with RestrictAddressFamilies=~AF_UNIX is unavailable here."
+            echo "The comparator's documented guarantee assumes that guard; this job fails closed"
+            echo "rather than elaborating untrusted Lean without it."
+            exit 1
+          fi
+          echo "COMPARATOR_AF_UNIX_GUARD=active" >> "$GITHUB_ENV"
+          echo "systemd-run AF_UNIX guard: active"
+
+      - name: Check out this repository (solution + challenge)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      # --- Sandbox + second-kernel verifier binaries -------------------------
+      # Real landrun (Landlock) replaces the tool's fake-landrun.sh no-op shim,
+      # and nanoda_bin provides the independent second kernel for enable_nanoda
+      # in comparator/config.json. Both are SHA-pinned and cached; no
+      # restore-keys on purpose — a binary at the wrong SHA must never be
+      # silently reused, a miss just rebuilds (~2-3 min).
+      - name: Restore verifier binaries (landrun + nanoda)
+        id: verifier-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.verifier-bin
+          key: ${{ runner.os }}-verifiers-v1-${{ env.LANDRUN_REF }}-${{ env.NANODA_REF }}
+
+      - name: Build landrun (cache miss only)
+        if: steps.verifier-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.verifier-bin"
+          # Module path is lowercase (module github.com/zouuup/landrun); the
+          # proxy + sumdb verify the module zip and all deps at this exact SHA.
+          GOBIN="$HOME/.verifier-bin" go install "github.com/zouuup/landrun/cmd/landrun@${LANDRUN_REF}"
+
+      - name: Build nanoda_bin (cache miss only)
+        if: steps.verifier-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.verifier-bin"
+          git clone https://github.com/ammkrn/nanoda_lib.git "$RUNNER_TEMP/nanoda_lib"
+          git -C "$RUNNER_TEMP/nanoda_lib" checkout --detach "$NANODA_REF"
+          # nanoda_lib commits Cargo.lock, so --locked pins the crate graph.
+          cargo build --release --locked --manifest-path "$RUNNER_TEMP/nanoda_lib/Cargo.toml"
+          install -m 0755 "$RUNNER_TEMP/nanoda_lib/target/release/nanoda_bin" "$HOME/.verifier-bin/nanoda_bin"
+
+      - name: Expose verifier binaries
+        run: |
+          set -euo pipefail
+          test -x "$HOME/.verifier-bin/landrun"
+          test -x "$HOME/.verifier-bin/nanoda_bin"
+          echo "COMPARATOR_LANDRUN=$HOME/.verifier-bin/landrun" >> "$GITHUB_ENV"
+          echo "COMPARATOR_NANODA=$HOME/.verifier-bin/nanoda_bin" >> "$GITHUB_ENV"
+
+      # The landrun (go) + nanoda (cargo) binaries are now safely in
+      # ~/.verifier-bin (and cached); their multi-GB build trees are dead weight
+      # before the Mathlib-heavy phases. Prune them. Everything here is tolerant
+      # of a cache-hit run where the build trees were never created.
+      - name: Prune verifier build trees
+        run: |
+          set -uo pipefail
+          rm -rf "$RUNNER_TEMP/nanoda_lib" || true          # cargo target/ + sources
+          go clean -cache 2>/dev/null || true               # $HOME/.cache/go-build
+          rm -rf "$HOME/go/pkg/mod" 2>/dev/null || true     # go module cache
+          df -h /
+
+      # landrun is invoked with --best-effort, which silently degrades to
+      # no-sandbox on a Landlock-less kernel. This step turns that silent
+      # degradation into a hard failure: if the canary write is not denied, or a
+      # TCP connect is not denied, the runner image regressed and the run must
+      # not certify anything. Both controls use exactly the ruleset the
+      # comparator itself builds (filesystem rules only, no --unrestricted-*),
+      # under which go-landlock still handles the network domain and, with no
+      # ConnectTCP rule, denies every connect.
+      - name: Landlock sandbox self-test
+        run: |
+          set -euo pipefail
+          # Positive control: an allowed command must succeed under landrun.
+          "$COMPARATOR_LANDRUN" --best-effort --ro / --rw /dev -ldd -add-exec true
+          # Negative control: a write outside the allowed paths must be denied.
+          if "$COMPARATOR_LANDRUN" --best-effort --ro / --rw /dev -ldd -add-exec touch "$HOME/landlock-canary" 2>/dev/null; then
+            echo "landrun failed to block a write outside the allowed paths"
+            exit 1
+          fi
+          test ! -e "$HOME/landlock-canary"
+          # Network canary (codex-audit CX-049). The listener is started here, on
+          # loopback, so the assertion depends on nothing outside this runner: no
+          # DNS, no egress policy, no third-party endpoint whose availability can
+          # quietly remove a stated sandbox assertion. Both branches are hard
+          # failures — an unestablished positive control means landrun's denial
+          # was never exercised, which is not a green condition.
+          port=18923
+          mkdir -p "${RUNNER_TEMP}/canary-root"
+          python3 -m http.server "$port" --bind 127.0.0.1 --directory "${RUNNER_TEMP}/canary-root" \
+            > "${RUNNER_TEMP}/canary-listener.log" 2>&1 &
+          listener_pid=$!
+          trap 'kill "$listener_pid" 2>/dev/null || true' EXIT
+          control=""
+          for _ in $(seq 1 50); do
+            if curl -fsS --max-time 2 -o /dev/null "http://127.0.0.1:${port}/" 2>/dev/null; then
+              control="up"
+              break
+            fi
+            sleep 0.2
+          done
+          if [ -z "$control" ]; then
+            echo "network canary positive control failed: the loopback listener never accepted a connection,"
+            echo "so a denial inside the sandbox would prove nothing about landrun."
+            cat "${RUNNER_TEMP}/canary-listener.log" || true
+            exit 1
+          fi
+          echo "network canary: positive control connected unsandboxed"
+          if "$COMPARATOR_LANDRUN" --best-effort --ro / --rw /dev -ldd -add-exec \
+               curl -fsS --max-time 5 -o /dev/null "http://127.0.0.1:${port}/" 2>/dev/null; then
+            echo "landrun failed to block a TCP connect under a filesystem-only ruleset"
+            exit 1
+          fi
+          echo "network canary: TCP connect denied inside the sandbox"
+          kill "$listener_pid" 2>/dev/null || true
+          wait "$listener_pid" 2>/dev/null || true
+          trap - EXIT
+
+      # elan + the Mathlib packages only. `build: false` is the whole point: no
+      # Lean of this repository is elaborated in this job outside the sandbox.
+      # (The comparator tool and lean4export ARE built below — they are the
+      # verifier, not the subject, and they are pinned by commit.)
+      - name: Set up Lean and the Mathlib cache (no build)
+        uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+        with:
+          lake-package-directory: .
+          build: "false"
+          test: false
+          lint: false
+          use-mathlib-cache: "true"
+
+      # Inside the sandbox every path but the project's .lake is read-only and
+      # TCP is denied, so elan can neither download a toolchain nor install one.
+      # Have the toolchain on disk before landrun starts.
+      - name: Pre-install the pinned toolchain
+        run: |
+          set -euo pipefail
+          elan toolchain install "$(tr -d '[:space:]' < lean-toolchain)"
+          elan toolchain list
+
+      # The subject library, built in the trusted job. Restoring it here keeps
+      # the sandboxed `lake build Solution` to elaborating Challenge/Solution
+      # themselves rather than rebuilding HopfProblem inside the sandbox.
+      - name: Download the subject oleans
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: subject-oleans
+          path: ${{ runner.temp }}/subject-oleans
+
+      - name: Unpack the subject oleans
+        run: |
+          set -euo pipefail
+          tar -xzf "${RUNNER_TEMP}/subject-oleans/subject-oleans.tar.gz" -C .
+          test -d .lake/build/lib/lean/HopfProblem
+          # CX-012 again, from the other side: the sandboxed build must be a real
+          # COLD build of the two comparator modules. If the artifact ever
+          # carried their oleans, `lake build Solution` inside landrun would be a
+          # no-op and the run would certify nothing.
+          for stale in Challenge Solution SolutionProbe; do
+            if [ -e ".lake/build/lib/lean/${stale}.olean" ]; then
+              echo "the subject artifact contains ${stale}.olean: the sandboxed build would be a no-op"
+              exit 1
+            fi
+          done
+
+      # The comparator tool is a dependency of THIS workspace, so it is built
+      # here with the project's own toolchain and against the project's own
+      # lake-manifest.json — which is why this port needs no separate tool
+      # checkout and no `comparator-tool/lean-toolchain` override step. The
+      # property codex-audit CX-053 asked for (the tool built on the toolchain
+      # whose kernel then replays the export, and that toolchain recorded as
+      # `tool_toolchain`) holds by construction here; it is still recorded.
+      #
+      # `Comparator/comparator` is the package-qualified exe target; `lean4export`
+      # names a package and builds its default target. Neither pulls in Challenge
+      # or Solution.
+      - name: Build the comparator tool and lean4export
+        run: |
+          set -euo pipefail
+          lake build Comparator/comparator lean4export
+          comparator_bin="${GITHUB_WORKSPACE}/.lake/packages/Comparator/.lake/build/bin/comparator"
+          lean4export_bin="${GITHUB_WORKSPACE}/.lake/packages/lean4export/.lake/build/bin/lean4export"
+          test -x "$comparator_bin"
+          test -x "$lean4export_bin"
+          echo "COMPARATOR_BIN=$comparator_bin" >> "$GITHUB_ENV"
+          echo "COMPARATOR_LEAN4EXPORT=$lean4export_bin" >> "$GITHUB_ENV"
+
+      # --- Trusted pre-run containment evidence (CX-050 / CX-051) ------------
+      # Containment has to be established BEFORE the repository's own Lean is
+      # elaborated: a probe that runs afterwards cannot retroactively protect the
+      # boundary the first elaboration already crossed (CX-050), and a probe that
+      # IS a repository file is not independent evidence — a fixture edited to
+      # print the expected words while attempting nothing satisfies every
+      # acceptance predicate (CX-051).
+      #
+      # This step is neither. Everything it runs is written here, by this
+      # workflow, into a scratch package outside the checkout; the package
+      # imports only core Lean (no repository modules, no Mathlib); its two write
+      # targets and its denial sentinel are randomised per run and baked into the
+      # heredoc, so no repository content can name or forge them; and the outcome
+      # is classified from OS-level facts — do the target files exist? — with an
+      # unsandboxed positive control first, proving the fixture really does write
+      # when nothing stops it. A run that fails without the sentinel is a run
+      # that proved nothing, and fails the job.
+      #
+      # The landrun invocation is the comparator's own, argument for argument
+      # (leanprover/comparator Main.lean, buildLandrunArgs + safeLakeBuild at the
+      # pinned commit), with the scratch package in place of the project, and it
+      # is wrapped in the same systemd-run AF_UNIX guard as the real run.
+      - name: Trusted pre-run sandbox self-test
+        run: |
+          set -euo pipefail
+          test "${COMPARATOR_AF_UNIX_GUARD}" = "active"
+          nonce="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          scratch="${RUNNER_TEMP}/sandbox-selftest"
+          target_a="${RUNNER_TEMP}/selftest-canary-a-${nonce}"
+          target_b="${HOME}/selftest-canary-b-${nonce}"
+          rm -rf "$scratch" "$target_a" "$target_b"
+          mkdir -p "$scratch/.lake"
+          cp lean-toolchain "$scratch/lean-toolchain"
+          cat > "$scratch/lakefile.toml" <<'TOML'
+          name = "selftest"
+          defaultTargets = ["SelfTest"]
+
+          [[lean_lib]]
+          name = "SelfTest"
+          TOML
+          # Unquoted heredoc: the two target paths and the sentinel are expanded
+          # into the source at generation time. Keep the body free of $ and
+          # backticks so nothing else is expanded.
+          cat > "$scratch/SelfTest.lean" <<LEAN
+          import Lean.Elab.Command
+
+          namespace SelfTest
+
+          private def targets : Array String :=
+            #["${target_a}", "${target_b}"]
+
+          private def tryWrite (target : String) : IO Bool := do
+            try
+              IO.FS.writeFile (System.FilePath.mk target) "sandbox self-test write"
+              return true
+            catch _ =>
+              return false
+
+          private def attemptEscape : IO (Array String) := do
+            let mut written : Array String := #[]
+            for target in targets do
+              if (← tryWrite target) then
+                written := written.push target
+            return written
+
+          end SelfTest
+
+          run_cmd do
+            let written ← SelfTest.attemptEscape
+            if written.isEmpty then
+              throwError "SELFTEST_WRITES_DENIED_${nonce}"
+            else
+              IO.println "SELFTEST_WRITES_ACCEPTED_${nonce}"
+          LEAN
+          cat "$scratch/SelfTest.lean"
+
+          # 1. Resolve the toolchain the way the real run resolves it. The
+          #    comparator is launched as `lake env <comparator> <config>` (see
+          #    "Run comparator" below), so by the time it calls
+          #    osexec.LookPath("lake") its PATH already starts with
+          #    <leanPrefix>/bin: the binary it sandboxes is the TOOLCHAIN lake,
+          #    which its own `--rox <leanPrefix>` rule covers, and so is
+          #    everything that lake goes on to exec.
+          #
+          #    This matters because landrun's `-add-exec` adds only the ONE
+          #    resolved command binary to --rox (cmd/landrun/main.go at the
+          #    pinned LANDRUN_REF: `binary, err := osexec.LookPath(args[0])`,
+          #    then `readOnlyExecutablePaths = append(..., binary)` under
+          #    `if c.Bool("add-exec")`). `--ro /` grants read, never exec. If
+          #    args[0] resolves to the elan shim at ~/.elan/bin/lake instead,
+          #    the shim is execable but the toolchain lake it proxies to is not,
+          #    and the run dies in milliseconds with `Permission denied
+          #    (os error 13)` before reaching any elaboration — which the
+          #    "certifies nothing" gate below correctly fails the job on. Name
+          #    the toolchain binary explicitly and put its bin dir first, as
+          #    `lake env` does.
+          lean_prefix="$(cd "$scratch" && lean --print-prefix)"
+          lake_bin="${lean_prefix}/bin/lake"
+          if [ ! -x "$lake_bin" ]; then
+            echo "no lake at ${lake_bin}: the toolchain layout changed, and resolving lake through"
+            echo "PATH would sandbox the elan shim instead of the binary it proxies to."
+            exit 1
+          fi
+          git_location="$(command -v git)"
+          sandbox_path="${lean_prefix}/bin:${PATH}"
+          echo "self-test toolchain: ${lake_bin}"
+
+          # 2. Positive control, unsandboxed, with the same binary and the same
+          #    PATH as the sandboxed run below, so the sandbox is the only
+          #    difference between them. Without this control the sandboxed run
+          #    cannot distinguish "the writes were refused" from "the fixture
+          #    never attempted them".
+          pos="${RUNNER_TEMP}/selftest-unsandboxed.log"
+          set +e
+          ( cd "$scratch" && PATH="$sandbox_path" LEAN_ABORT_ON_PANIC=1 \
+              "$lake_bin" build SelfTest ) > "$pos" 2>&1
+          pos_rc=$?
+          set -e
+          cat "$pos"
+          if [ ! -e "$target_a" ] || [ ! -e "$target_b" ]; then
+            echo "self-test positive control failed (exit ${pos_rc}): the probe did not write both targets"
+            echo "outside any sandbox, so a later denial would prove nothing."
+            exit 1
+          fi
+          if ! grep -q "SELFTEST_WRITES_ACCEPTED_${nonce}" "$pos"; then
+            echo "self-test positive control failed: the acceptance sentinel was not emitted"
+            exit 1
+          fi
+          rm -f "$target_a" "$target_b"
+          echo "self-test positive control: both writes succeeded outside the sandbox"
+
+          # 3. The same bytes, through the full wrapper. Clearing .lake/build is
+          #    what forces re-elaboration: a warm build directory is exactly how
+          #    CX-012 turned the sandboxed build into a no-op. lake-manifest.json
+          #    and .lake itself stay, as they do in the real project checkout.
+          #    PATH is set on systemd-run rather than only forwarded, because
+          #    landrun resolves args[0] against its OWN environment before
+          #    applying the sandbox.
+          rm -rf "$scratch/.lake/build"
+          sand="${RUNNER_TEMP}/selftest-sandboxed.log"
+          set +e
+          systemd-run --user --pipe --wait --collect \
+            -p RestrictAddressFamilies=~AF_UNIX \
+            --working-directory "$scratch" \
+            -E PATH="$sandbox_path" \
+            -E HOME="$HOME" \
+            -E LEAN_ABORT_ON_PANIC=1 \
+            -- "$COMPARATOR_LANDRUN" --best-effort --ro / --rw /dev -ldd -add-exec \
+                 --env PATH --env HOME --env LEAN_ABORT_ON_PANIC \
+                 --ro "$scratch" --rwx "$scratch/.lake" \
+                 --rox "$lean_prefix" --rox "$git_location" \
+                 -- "$lake_bin" build SelfTest > "$sand" 2>&1
+          sand_rc=$?
+          set -e
+          cat "$sand"
+          for target in "$target_a" "$target_b"; do
+            if [ -e "$target" ]; then
+              echo "SANDBOX BREACH: the pre-run self-test wrote ${target} from inside the sandbox"
+              exit 1
+            fi
+          done
+          if [ "$sand_rc" -eq 0 ]; then
+            echo "SANDBOX BREACH: the pre-run self-test elaborated successfully inside the sandbox"
+            exit 1
+          fi
+          if grep -q "SELFTEST_WRITES_ACCEPTED_${nonce}" "$sand"; then
+            echo "SANDBOX BREACH: the pre-run self-test reported an accepted write inside the sandbox"
+            exit 1
+          fi
+          if ! grep -q "SELFTEST_WRITES_DENIED_${nonce}" "$sand"; then
+            echo "the sandboxed self-test failed without reaching the write attempt (exit ${sand_rc}):"
+            echo "no containment conclusion can be drawn, so this run certifies nothing."
+            echo "if the log shows a permission error on exec rather than on a write, the ruleset"
+            echo "no longer covers the toolchain this step resolved (${lake_bin}); compare it against"
+            echo "buildLandrunArgs / safeLakeBuild in the pinned comparator before touching the gates."
+            exit 1
+          fi
+          echo "pre-run self-test OK: elaboration-time writes denied inside the sandbox (exit ${sand_rc})"
+          jq -n --arg tier "pre-run-trusted" --argjson rc "$sand_rc" \
+                --arg a "$target_a" --arg b "$target_b" \
+            '{tier: $tier, exit_code: $rc, denied: true, sentinel_observed: true, targets: [$a, $b]}' \
+            > "${RUNNER_TEMP}/selftest.json"
+          rm -rf "$scratch"
+
+      # --- Integrity across the verification gap -----------------------------
+      # One script, run immediately before and immediately after the certified
+      # run, so the two manifests are computed identically and a difference can
+      # only mean the machinery or the certified sources changed mid-flight.
+      - name: Prepare the input-hash manifest script
+        run: |
+          set -euo pipefail
+          cat > "${RUNNER_TEMP}/hash-inputs.sh" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          out="$1"
+          pairs="${out}.pairs"
+          : > "$pairs"
+          emit() { printf '%s\t%s\n' "$1" "$(sha256sum "$2" | cut -d' ' -f1)" >> "$pairs"; }
+          emit comparator        "${COMPARATOR_BIN}"
+          emit lean4export       "${COMPARATOR_LEAN4EXPORT}"
+          emit landrun           "${COMPARATOR_LANDRUN}"
+          emit nanoda            "${COMPARATOR_NANODA}"
+          emit comparator_config "${GITHUB_WORKSPACE}/${COMPARATOR_CONFIG}"
+          emit challenge_lean    "${GITHUB_WORKSPACE}/${COMPARATOR_CHALLENGE}"
+          emit solution_lean     "${GITHUB_WORKSPACE}/${COMPARATOR_SOLUTION}"
+          jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add' "$pairs" > "$out"
+          rm -f "$pairs"
+          cat "$out"
+          SH
+          chmod +x "${RUNNER_TEMP}/hash-inputs.sh"
+
+      - name: Hash the verification inputs (before)
+        run: |
+          set -euo pipefail
+          echo "COMPARATOR_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          "${RUNNER_TEMP}/hash-inputs.sh" "${RUNNER_TEMP}/hashes-before.json"
+
+      - name: Run comparator
+        # COMPARATOR_LANDRUN / COMPARATOR_NANODA / COMPARATOR_LEAN4EXPORT all
+        # come from GITHUB_ENV and are read by the tool (Main.lean, M.run). The
+        # sandboxed `lake build` steps are a real cold build: this is where
+        # Challenge and Solution are elaborated for the first time, which is the
+        # point of the job split.
+        run: |
+          set -euo pipefail
+          # Run from the repository root so `lake env` supplies the workspace's
+          # LEAN_PATH (Mathlib, HopfProblem) to the comparator and its child
+          # `lake` invocations, and so the tool's `projectDir := cwd` is this
+          # checkout.
+          cmd=(lake env "${COMPARATOR_BIN}" "${COMPARATOR_CONFIG}")
+          # The AF_UNIX guard (comparator README: a known landrun escape uses
+          # AF_UNIX, and systemd-run masks it) was asserted available at the top
+          # of this job and is applied unconditionally here. There is no
+          # unwrapped fallback: a run without the guard is a different security
+          # property and must not reach the same verdict (CX-048).
+          test "${COMPARATOR_AF_UNIX_GUARD}" = "active"
+          exec systemd-run --user --pipe --wait --collect \
+            -p RestrictAddressFamilies=~AF_UNIX \
+            --working-directory "$PWD" \
+            -E PATH="$PATH" \
+            -E COMPARATOR_LANDRUN="$COMPARATOR_LANDRUN" \
+            -E COMPARATOR_NANODA="$COMPARATOR_NANODA" \
+            -E COMPARATOR_LEAN4EXPORT="$COMPARATOR_LEAN4EXPORT" \
+            -- "${cmd[@]}"
+
+      - name: Hash the verification inputs (after)
+        run: |
+          set -euo pipefail
+          echo "COMPARATOR_FINISHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          "${RUNNER_TEMP}/hash-inputs.sh" "${RUNNER_TEMP}/hashes-after.json"
+
+      # DEFENSE IN DEPTH, not the containment evidence. The containment evidence
+      # is the trusted pre-run self-test above; this step re-runs the same shape
+      # of check through the comparator's own driver and against the real
+      # solution's imports, which the scratch package deliberately does not have.
+      #
+      # Its known limitation (codex-audit CX-051): comparator/SolutionProbe.lean
+      # is a repository file, so a fixture edited to throw the sentinel without
+      # attempting anything would satisfy all three predicates below. That is
+      # precisely why it is no longer the first or the only evidence: the pre-run
+      # self-test runs workflow-owned bytes with workflow-chosen targets and
+      # classifies the result from the filesystem. The predicates are kept
+      # because they still detect a real regression in the driver, and they still
+      # fail closed.
+      #
+      # comparator/SolutionProbe.lean is `import HopfProblem` — the whole content
+      # of Solution.lean — plus a top-level `run_cmd` that tries to write outside
+      # the sandbox before any declaration is elaborated:
+      #   * every write denied -> the fixture aborts elaboration with the
+      #     sentinel, the sandboxed `lake build` fails, the comparator exits
+      #     non-zero. That is the passing outcome, and the sentinel is what
+      #     distinguishes it from an unrelated failure.
+      #   * any write accepted -> the fixture stays silent, proves the challenge
+      #     statement, the comparator exits 0 and the canary files exist. Both
+      #     signals fail this step.
+      - name: Denied-write probe (defense in depth)
+        run: |
+          set -uo pipefail
+          log="${RUNNER_TEMP}/probe.log"
+          set +e
+          lake env "${COMPARATOR_BIN}" "${COMPARATOR_PROBE_CONFIG}" > "$log" 2>&1
+          rc=$?
+          set -e
+          cat "$log"
+          for canary in "${GITHUB_WORKSPACE}/comparator-probe-canary" "${HOME}/comparator-probe-canary"; do
+            if [ -e "$canary" ]; then
+              echo "SANDBOX BREACH: the probe wrote $canary from inside the sandbox"
+              exit 1
+            fi
+          done
+          if [ "$rc" -eq 0 ]; then
+            echo "SANDBOX BREACH: the probe solution elaborated and verified; its write was not denied"
+            exit 1
+          fi
+          if ! grep -q 'COMPARATOR_PROBE_WRITES_DENIED' "$log"; then
+            echo "the probe run failed without the denial sentinel: cannot conclude the sandbox blocked the write"
+            exit 1
+          fi
+          echo "probe OK: the elaboration-time writes were denied (comparator exit ${rc})"
+          jq -n --arg config "$COMPARATOR_PROBE_CONFIG" --argjson rc "$rc" \
+                --arg tier "defense-in-depth" \
+            '{config: $config, exit_code: $rc, denied: true, tier: $tier}' > "${RUNNER_TEMP}/probe.json"
+
+      # The single evidence record. Everything the published status will claim is
+      # derived here, in the job that actually ran the check, from the config
+      # that was passed to the tool and from this run's own pins and hashes.
+      #
+      # `kernel_identities` is the one field a362583's record does not carry
+      # (codex-audit CX-064): the run's own statement of WHICH nanoda executable
+      # replayed the export — the repository and revision this workflow pinned,
+      # and the digest of the binary the manifest above hashed, which is the same
+      # value read out of the manifest rather than a second hash of it. It
+      # establishes nothing by itself; the site authenticates it against
+      # site/trust/kernel-identities.json, a pin its author committed.
+      - name: Compose the comparator result record
+        run: |
+          set -euo pipefail
+          if ! diff <(jq -S . "${RUNNER_TEMP}/hashes-before.json") \
+                    <(jq -S . "${RUNNER_TEMP}/hashes-after.json"); then
+            echo "a verification input changed during the comparator run"
+            exit 1
+          fi
+          mkdir -p "${RUNNER_TEMP}/result"
+          jq -n \
+            --slurpfile cfg "$COMPARATOR_CONFIG" \
+            --slurpfile pre "${RUNNER_TEMP}/hashes-before.json" \
+            --slurpfile post "${RUNNER_TEMP}/hashes-after.json" \
+            --slurpfile probe "${RUNNER_TEMP}/probe.json" \
+            --slurpfile selftest "${RUNNER_TEMP}/selftest.json" \
+            --arg config "$COMPARATOR_CONFIG" \
+            --arg af_unix_guard "$COMPARATOR_AF_UNIX_GUARD" \
+            --arg started_at "$COMPARATOR_STARTED_AT" \
+            --arg finished_at "$COMPARATOR_FINISHED_AT" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg commit "$GITHUB_SHA" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg tool_ref "$COMPARATOR_TOOL_REF" \
+            --arg tool_sha "$COMPARATOR_TOOL_SHA" \
+            --arg toolchain "$(tr -d '[:space:]' < lean-toolchain)" \
+            --arg landrun_ref "$LANDRUN_REF" \
+            --arg nanoda_ref "$NANODA_REF" \
+            --arg nanoda_repository "$NANODA_REPOSITORY" \
+            '($cfg[0]) as $c
+             | (($c.enable_nanoda // false) == true) as $replay
+             | { verdict: "verified",
+                 repository: $repository,
+                 commit: $commit,
+                 run_id: $run_id,
+                 started_at: $started_at,
+                 finished_at: $finished_at,
+                 config: $config,
+                 challenge_module: $c.challenge_module,
+                 solution_module: $c.solution_module,
+                 theorem_names: ($c.theorem_names // []),
+                 permitted_axioms: ($c.permitted_axioms // []),
+                 nanoda_replay: $replay,
+                 toolchain: $toolchain,
+                 tool_ref: $tool_ref,
+                 tool_sha: $tool_sha,
+                 tool_toolchain: $toolchain,
+                 landrun_ref: $landrun_ref,
+                 nanoda_ref: $nanoda_ref,
+                 af_unix_guard: $af_unix_guard,
+                 kernel_identities: [
+                   { label: "nanoda",
+                     repository: $nanoda_repository,
+                     source_commit: $nanoda_ref,
+                     executable_sha256: $post[0].nanoda,
+                     replayed: $replay } ],
+                 inputs_sha256_before: $pre[0],
+                 inputs_sha256_after: $post[0],
+                 sandbox_selftest: $selftest[0],
+                 sandbox_write_probe: $probe[0] }
+             | if (.challenge_module // "") == "" or (.solution_module // "") == ""
+                  or (.theorem_names | length) == 0 or (.permitted_axioms | length) == 0 then
+                 error("comparator/config.json is missing challenge_module / solution_module / theorem_names / permitted_axioms")
+               else . end' > "${RUNNER_TEMP}/result/comparator-result.json"
+          cp "${RUNNER_TEMP}/hashes-before.json" "${RUNNER_TEMP}/hashes-after.json" \
+             "${RUNNER_TEMP}/probe.log" "${RUNNER_TEMP}/selftest-unsandboxed.log" \
+             "${RUNNER_TEMP}/selftest-sandboxed.log" "${RUNNER_TEMP}/result/"
+          cat "${RUNNER_TEMP}/result/comparator-result.json"
+
+      - name: Upload the comparator result record
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: comparator-result
+          path: ${{ runner.temp }}/result
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Disk space after verification
+        run: df -h /
+
+  # =====================================================================
+  # 3. Trusted publication: result record -> comparator-status.json and the
+  #    checker-identity pin. The only job that can write to the repository.
+  # =====================================================================
+  publish:
+    needs: comparator
+    # `showcase` only. Spelled literally because a job-level `if:` has no access
+    # to the `env` context; the first step below asserts this spelling and
+    # PUBLISH_BRANCH agree, so the two cannot drift apart silently (the coupling
+    # problem of codex-audit CX-079, in the one place this workflow still has a
+    # capability predicate). A push to `split` runs build + comparator and stops.
+    if: github.ref_name == 'showcase'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write   # commit the status artifact back to showcase (push events only)
+      actions: read     # resolve the step-level deep link into the comparator job's log
+    steps:
+      - name: Assert the publish branch predicate
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_NAME}" != "${PUBLISH_BRANCH}" ]; then
+            echo "this job ran on '${GITHUB_REF_NAME}' but PUBLISH_BRANCH is '${PUBLISH_BRANCH}':"
+            echo "the job-level 'if:' and the env constant have drifted apart."
+            exit 1
+          fi
+          echo "publish branch predicate OK: ${PUBLISH_BRANCH}"
+
+      - name: Check out this repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # Do NOT leave the write-capable token in .git/config for the whole
+          # job. The commit-back step below authenticates its single push.
+          persist-credentials: false
+
+      - name: Download the comparator result record
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: comparator-result
+          path: ${{ runner.temp }}/result
+
+      # Nothing downstream may take the result record on faith. The record is the
+      # sole input to the write-capable status refresh below, so every field it
+      # publishes is re-derived or compared here against something this job
+      # trusts: the workflow constants above, the checked-out comparator config,
+      # the GitHub context, this checkout's own source digests, and this job's
+      # clock. Unknown keys are rejected too — a validator that ignores the
+      # fields it was not taught about is how a record with correct public claims
+      # and forged provenance gets republished as verifier evidence
+      # (codex-audit CX-052). The validator's rejection behaviour is itself
+      # tested, in the build job, against forged fixtures.
+      #
+      # No Lean runs in this job at all, so codex-audit CX-072 (a publish job
+      # that called `lake` without ever installing a toolchain) has no counterpart
+      # here — but the rule behind it does: if a step is ever added that calls
+      # `lake`, this job needs its own toolchain setup, because a job split does
+      # not inherit one.
+      - name: Validate the result record against this job's trusted inputs
+        run: |
+          set -euo pipefail
+          cat "${RUNNER_TEMP}/result/comparator-result.json"
+          toolchain="$(tr -d '[:space:]' < lean-toolchain)"
+          python3 scripts/validate_comparator_result.py \
+            --result "${RUNNER_TEMP}/result/comparator-result.json" \
+            --config-file "$COMPARATOR_CONFIG" \
+            --config-path "$COMPARATOR_CONFIG" \
+            --probe-config "$COMPARATOR_PROBE_CONFIG" \
+            --repository "$GITHUB_REPOSITORY" \
+            --run-id "$GITHUB_RUN_ID" \
+            --commit "$GITHUB_SHA" \
+            --toolchain "$toolchain" \
+            --tool-ref "$COMPARATOR_TOOL_REF" \
+            --tool-sha "$COMPARATOR_TOOL_SHA" \
+            --tool-toolchain "$toolchain" \
+            --landrun-ref "$LANDRUN_REF" \
+            --nanoda-ref "$NANODA_REF" \
+            --nanoda-repository "$NANODA_REPOSITORY" \
+            --af-unix-guard active \
+            --selftest-tier pre-run-trusted \
+            --probe-tier defense-in-depth \
+            --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --max-age-seconds 43200 \
+            --hash-file "comparator_config=${COMPARATOR_CONFIG}" \
+            --hash-file "challenge_lean=${COMPARATOR_CHALLENGE}" \
+            --hash-file "solution_lean=${COMPARATOR_SOLUTION}"
+
+      # Resolve a *step-level* deep link to the "Run comparator" step, so the
+      # comparator page's "View CI run" link lands the reader on the kernel replay
+      # in the logs, not just the run summary. The lookup is by STEP name, so it
+      # does not care which job the step lives in. Best-effort: ANY failure of the
+      # API / jq lookup falls back to the run-level URL — this step MUST never
+      # fail the job (hence `set -uo pipefail` without `-e`, and `|| true` on
+      # every lookup).
+      - name: Resolve CI run deep link
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          fallback="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          deep=""
+          jobs_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100" 2>/dev/null || true)"
+          if [ -n "$jobs_json" ]; then
+            job="$(printf '%s' "$jobs_json" | jq -c 'first(.jobs[] | select(any(.steps[]?; .name == "Run comparator")))' 2>/dev/null || true)"
+            if [ -n "$job" ] && [ "$job" != "null" ]; then
+              job_id="$(printf '%s' "$job" | jq -r '.id // empty' 2>/dev/null || true)"
+              step_no="$(printf '%s' "$job" | jq -r 'first(.steps[]? | select(.name == "Run comparator") | .number) // empty' 2>/dev/null || true)"
+              if [ -n "$job_id" ] && [ -n "$step_no" ]; then
+                deep="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/job/${job_id}#step:${step_no}:1"
+              fi
+            fi
+          fi
+          url="${deep:-$fallback}"
+          echo "CI_RUN_URL=$url" >> "$GITHUB_ENV"
+          echo "Resolved CI_RUN_URL=$url"
+
+      - name: Refresh comparator-status.json
+        run: |
+          set -euo pipefail
+          # This artifact is the sole evidence the blueprint's trust surfaces
+          # quote, so everything in it is written here, by machine, and nothing
+          # in it is author-typed: the claim fields come from the result record
+          # the verification job emitted (which in turn copied them out of the
+          # very config it passed to the tool), and the note is composed from
+          # those. Nothing is asserted that the record does not carry.
+          #
+          # Composed whole with `jq -n` rather than merged into the file on disk
+          # (a362583 merges): this repository has no status artifact before the
+          # first run, and a merge would also carry forward keys a later workflow
+          # stopped writing.
+          res="${RUNNER_TEMP}/result/comparator-result.json"
+          run_url="${CI_RUN_URL:-${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}}"
+          mkdir -p "$(dirname "$COMPARATOR_STATUS")"
+          jq -n \
+            --slurpfile res "$res" \
+            --arg run_url "$run_url" \
+            --arg challenge "$COMPARATOR_CHALLENGE" \
+            '
+            ($res[0]) as $r
+            | ($r.theorem_names) as $thms
+            | ($r.permitted_axioms) as $axs
+            | {
+                status: $r.verdict,
+                # The subject identity the validator above authenticated against
+                # this checkout. Without it the published artifact would describe
+                # WHICH programs did the checking but not WHICH project revision
+                # was checked (codex-audit CX-068).
+                repository: $r.repository,
+                commit: $r.commit,
+                config: $r.config,
+                challenge_module: $r.challenge_module,
+                solution_module: $r.solution_module,
+                theorem_names: $thms,
+                permitted_axioms: $axs,
+                verified_at: $r.finished_at,
+                run_url: $run_url,
+                tool_ref: $r.tool_ref,
+                tool_sha: $r.tool_sha,
+                tool_toolchain: $r.tool_toolchain,
+                landrun_ref: $r.landrun_ref,
+                nanoda_replay: $r.nanoda_replay,
+                # The run evidence CX-064 asks for: not the label "nanoda" but
+                # the repository, revision and executable digest of the program
+                # that replayed the export. The site treats it as authenticated
+                # only where it agrees with the pin in site/trust.
+                kernel_identities: $r.kernel_identities,
+                config_sha256: $r.inputs_sha256_after.comparator_config,
+                challenge_sha256: $r.inputs_sha256_after.challenge_lean,
+                solution_sha256: $r.inputs_sha256_after.solution_lean,
+                # The ordered challenge chain this run verified. It is what the
+                # statement-closure surface on the site binds against: the
+                # closure is presented as adjacent to the verdict only when the
+                # chain the tool hashed matches this list, in order and by
+                # digest, so a dependency edited without touching the primary
+                # Challenge drops the binding rather than quietly keeping it.
+                # The chain here is the single root Challenge.lean, which imports
+                # only Mathlib; the digest is the one the manifest already
+                # computed over exactly those bytes, not a second hash of them.
+                # (No apostrophes in this comment: it lives inside the single-
+                # quoted jq program, and one would terminate the shell string.)
+                challenge_chain: [ { path: $challenge, sha256: $r.inputs_sha256_after.challenge_lean } ]
+              }
+            | (if $r.nanoda_replay then . + { nanoda_ref: $r.nanoda_ref } else del(.nanoda_ref) end)
+            | .note =
+                ( "Verified in CI by leanprover/comparator " + $r.tool_ref + " (commit " + $r.tool_sha
+                + "), built from this project as a Lake dependency with " + $r.tool_toolchain
+                + ", .github/workflows/ci.yml, against "
+                + $r.repository + " at commit " + $r.commit + ": the "
+                + $r.solution_module + " module kernel-checks the exact " + $r.challenge_module
+                + " statement" + (if ($thms | length) == 1 then " " else "s " end) + ($thms | join(", "))
+                + ", using only the permitted axioms " + ($axs | join(", "))
+                + ". Statement equality, axiom whitelist and Lean-kernel replay confirmed"
+                + (if $r.nanoda_replay then
+                     ", together with an independent replay by the nanoda kernel (ammkrn/nanoda_lib "
+                     + $r.nanoda_ref + ")"
+                   else "" end)
+                + ". The challenge and solution modules were elaborated for the first time inside a "
+                + "Landlock sandbox (Zouuup/landrun " + $r.landrun_ref + "), as were the kernel exports, "
+                + "under a systemd-run AF_UNIX guard (recorded as " + $r.af_unix_guard
+                + "; the run fails closed if that guard is unavailable). Before that elaboration, a probe "
+                + "written by the workflow itself — importing only core Lean, with write targets chosen "
+                + "per run — was put through the same sandbox wrapper: its writes outside the sandbox were "
+                + "refused, while an unsandboxed control confirmed the same probe does write when nothing "
+                + "stops it. After the run, a repository-side fixture attempting the same writes was also "
+                + "rejected, as defense in depth. The comparator, lean4export, landrun and nanoda binaries "
+                + "and the certified sources hashed identically before and after the run."
+                )
+            ' > "${COMPARATOR_STATUS}.tmp"
+          mv "${COMPARATOR_STATUS}.tmp" "$COMPARATOR_STATUS"
+          cat "$COMPARATOR_STATUS"
+
+      # The second, consumer-controlled half of codex-audit CX-064. The run's own
+      # identity record establishes nothing on its own — a producer who writes
+      # sixty-four hex characters into a field named `executable_sha256` earns
+      # whatever tier reads it. The site therefore authenticates that record
+      # against a pin committed HERE, in the consumer's own tree, transcribed
+      # from the verifying workflow's pins
+      # (`verso.blueprint.trust.expectedKernelIdentities`).
+      #
+      # So this step ASSERTS, it does not refresh: a committed pin that
+      # disagrees with the run fails the job and asks for a deliberate re-pin. A
+      # pin regenerated from the same run it is supposed to authenticate would
+      # agree with it by construction and check nothing. The file is written only
+      # when it is absent, to bootstrap the first run, and that write is
+      # announced rather than silent.
+      #
+      # Deliberately WITHOUT `executable_sha256` (the schema makes it optional):
+      # nanoda is `cargo build`-ed on the runner, so its digest moves whenever
+      # the hosted image's Rust moves. A pin on a value neither the site author
+      # nor this workflow can reproduce would either red the build on unrelated
+      # image bumps or, if auto-refreshed, authenticate nothing. Repository and
+      # revision are the parts a human actually chose. The digest is still
+      # published, as run evidence, in comparator-status.json.
+      - name: Check the pinned checker identities
+        run: |
+          set -euo pipefail
+          res="${RUNNER_TEMP}/result/comparator-result.json"
+          recorded_repo="$(jq -r '.kernel_identities[0].repository' "$res")"
+          recorded_commit="$(jq -r '.kernel_identities[0].source_commit' "$res")"
+          if [ ! -f "$KERNEL_IDENTITY_PINS" ]; then
+            mkdir -p "$(dirname "$KERNEL_IDENTITY_PINS")"
+            jq -n --arg repo "$recorded_repo" --arg commit "$recorded_commit" \
+              '[{label: "nanoda", repository: $repo, source_commit: $commit}]' \
+              > "$KERNEL_IDENTITY_PINS"
+            echo "::notice::bootstrapped ${KERNEL_IDENTITY_PINS} from this run; review it — from here on it is a pin this workflow only checks, never rewrites"
+            cat "$KERNEL_IDENTITY_PINS"
+            exit 0
+          fi
+          pin_repo="$(jq -r 'map(select(.label == "nanoda")) | .[0].repository // ""' "$KERNEL_IDENTITY_PINS")"
+          pin_commit="$(jq -r 'map(select(.label == "nanoda")) | .[0].source_commit // ""' "$KERNEL_IDENTITY_PINS")"
+          if [ "$pin_repo" != "$recorded_repo" ] || [ "$pin_commit" != "$recorded_commit" ]; then
+            echo "${KERNEL_IDENTITY_PINS} disagrees with the checker this run used:"
+            echo "  pinned:   ${pin_repo} @ ${pin_commit}"
+            echo "  this run: ${recorded_repo} @ ${recorded_commit}"
+            echo "if NANODA_REF was bumped deliberately, update the pin in the SAME commit;"
+            echo "the pin is what makes the run's own identity record worth anything."
+            exit 1
+          fi
+          echo "checker identity pin OK: nanoda ${pin_repo} @ ${pin_commit}"
+
+      - name: Upload the published status artifact
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: comparator-status
+          path: |
+            comparator/comparator-status.json
+            site/trust/kernel-identities.json
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Commit the status artifact back to showcase
+        # Only on a real push. On workflow_dispatch the refreshed files stay on
+        # disk and in the artifact above, but nothing is pushed. The GITHUB_TOKEN
+        # push does not re-fire `push:` (and paths-ignore double-guards it). The
+        # token is supplied only to this step's single push (persist-credentials
+        # is false on checkout, so nothing lives in .git/config).
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # `git add` first, then `--cached`: on the very first run these files
+          # are untracked, and `git diff` against the worktree reports no change
+          # for a path git does not know about.
+          git add -- "$COMPARATOR_STATUS" "$KERNEL_IDENTITY_PINS"
+          if git diff --cached --quiet; then
+            echo "No change to the status artifact; skipping commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit \
+            -m "comparator: verified" \
+            -m "Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:${PUBLISH_BRANCH}"
