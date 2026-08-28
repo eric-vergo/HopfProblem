@@ -1,0 +1,43 @@
+{
+  "status": "verified",
+  "repository": "eric-vergo/HopfProblem",
+  "commit": "e0c4c90437dec6209f8922c26e1cf0aadfc0627b",
+  "config": "comparator/config.json",
+  "challenge_module": "Challenge",
+  "solution_module": "Solution",
+  "theorem_names": [
+    "Mathoverflow1973.mathoverflow_1973"
+  ],
+  "permitted_axioms": [
+    "propext",
+    "Classical.choice",
+    "Quot.sound"
+  ],
+  "verified_at": "2026-08-28T03:28:00Z",
+  "run_url": "https://github.com/eric-vergo/HopfProblem/actions/runs/33136024687/job/98742633908#step:20:1",
+  "tool_ref": "v4.33.0",
+  "tool_sha": "3927ad383f208ae977c340a91c48ac9b497d2097",
+  "tool_toolchain": "leanprover/lean4:v4.33.0",
+  "landrun_ref": "811cfff51ceaf3d9843708aa6d22e9b84ccac8b4",
+  "nanoda_replay": true,
+  "kernel_identities": [
+    {
+      "label": "nanoda",
+      "repository": "https://github.com/ammkrn/nanoda_lib",
+      "source_commit": "05055695879dfebb6628a67da88ceca6cd6b0421",
+      "executable_sha256": "bb0244fe85a846f1577eadff0d710e6e97c381d0d585fbb831f307fb3f971dfe",
+      "replayed": true
+    }
+  ],
+  "config_sha256": "2c911530b1233e07e5e9031f74a5ad884630b5dcc74210de899cc2e2b6830a6b",
+  "challenge_sha256": "9b0cbe638ce7b1bb879e633a01a8915fdb292619967dadc56158a4f7ba091c3b",
+  "solution_sha256": "0ac7023a21c7a4fa38b6c3e65f8acb6a666fb43034aae0f960feea9872951cc5",
+  "challenge_chain": [
+    {
+      "path": "Challenge.lean",
+      "sha256": "9b0cbe638ce7b1bb879e633a01a8915fdb292619967dadc56158a4f7ba091c3b"
+    }
+  ],
+  "nanoda_ref": "05055695879dfebb6628a67da88ceca6cd6b0421",
+  "note": "Verified in CI by leanprover/comparator v4.33.0 (commit 3927ad383f208ae977c340a91c48ac9b497d2097), built from this project as a Lake dependency with leanprover/lean4:v4.33.0, .github/workflows/ci.yml, against eric-vergo/HopfProblem at commit e0c4c90437dec6209f8922c26e1cf0aadfc0627b: the Solution module kernel-checks the exact Challenge statement Mathoverflow1973.mathoverflow_1973, using only the permitted axioms propext, Classical.choice, Quot.sound. Statement equality, axiom whitelist and Lean-kernel replay confirmed, together with an independent replay by the nanoda kernel (ammkrn/nanoda_lib 05055695879dfebb6628a67da88ceca6cd6b0421). The challenge and solution modules were elaborated for the first time inside a Landlock sandbox (Zouuup/landrun 811cfff51ceaf3d9843708aa6d22e9b84ccac8b4), as were the kernel exports, under a systemd-run AF_UNIX guard (recorded as active; the run fails closed if that guard is unavailable). Before that elaboration, a probe written by the workflow itself — importing only core Lean, with write targets chosen per run — was put through the same sandbox wrapper: its writes outside the sandbox were refused, while an unsandboxed control confirmed the same probe does write when nothing stops it. After the run, a repository-side fixture attempting the same writes was also rejected, as defense in depth. The comparator, lean4export, landrun and nanoda binaries and the certified sources hashed identically before and after the run."
+}
