@@ -1,0 +1,197 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/mathlib-initiative/formalization.yaml/99c678e569c7c4c0772db297c5ddd5e4c9b6322e/schema/v0.4.schema.json
+# formalization.yaml (v0.4) — see https://github.com/mathlib-initiative/formalization.yaml
+# The blueprint site under site/ validates this file against the v0.4 subset check on
+# every build (`verso.blueprint.trust.validateFormalizationYaml`); a CI job should also
+# validate it against the schema at the commit pinned above, and the two pins should be
+# kept in step.
+version: "v0.4"
+
+project:
+  name: "The Hopf Problem: a complex structure on the six-sphere"
+  authors:
+    - "Boris Alexeev"
+    - "Codex (OpenAI)"
+  license: "Apache-2.0"
+
+# `sources` records what was formalized and what the formalization borrowed. The
+# principal entry is Alpöge's preprint: the mathematics is his, and this repository
+# formalizes it. The `repository` block is deliberately omitted rather than guessed —
+# the substantive formalization is upstream at github.com/plby/HopfProblem, and neither
+# `substantive-development` (this presentation did none of it) nor `thin-wrapper` (the
+# Lean sources are in-tree, not pulled in as a dependency) describes the arrangement
+# without overstating something.
+sources:
+  - title: "A compact complex threefold fibred by tori over the projective line, and the six-sphere"
+    authors: ["Levent Alpöge"]
+    id: "https://alpo.ge/s6.pdf"
+    type: "preprint (author-hosted PDF; originally circulated at https://x.com/__alpoge__/status/2091639597193368014)"
+    license: "not stated by the source"
+    relationship: "formalizes"
+    author_endorsement: "other"
+    note: >-
+      Endorsement status is not recorded by this repository. The enumeration has no
+      "unknown" value, so the honest entry is "other": we do not know whether the author
+      was contacted about the formalization, and no endorsement is claimed here. The
+      locator is the one given in the file header of Solution.lean, which is the
+      artifact a reader can check this entry against.
+  - title: "Formal Conjectures — FormalConjectures/Mathoverflow/1973.lean"
+    authors: ["The Formal Conjectures Authors"]
+    id: "https://github.com/google-deepmind/formal-conjectures/blob/main/FormalConjectures/Mathoverflow/1973.lean"
+    type: "formal statement (Lean 4)"
+    license: "Apache-2.0"
+    relationship: "background"
+    author_endorsement: "not-contacted"
+    note: >-
+      The source of the STATEMENT, not of the proof. The final theorem's type and the
+      repository's Challenge.lean are adapted from this file; what the formalization
+      proves is therefore a proposition someone else wrote down, which is the point of
+      the arrangement.
+  - title: "Mathlib PR 33505 — Riemann mapping theorem and related complex analysis"
+    authors: ["Yury Kudryashov"]
+    id: "https://github.com/leanprover-community/mathlib4/pull/33505 (source commit d43061d911b1aeae0788591da437a3b115098962)"
+    type: "unmerged Mathlib pull request (Lean 4)"
+    location: "Mathlib/Analysis/Complex/RiemannMapping.lean, Mathlib/Analysis/Complex/UnitDisc/Shift.lean"
+    license: "Apache-2.0"
+    relationship: "adapts"
+    author_endorsement: "not-contacted"
+    note: >-
+      The Riemann mapping theorem, Hurwitz's theorem, analytic factorization,
+      normal-family arguments and unit-disc automorphisms were adapted from this work,
+      modified and in places strengthened; the upstream copyright notices are retained
+      in the Solution.lean header.
+  - title: "Mathlib PR 28246 — van Kampen and simple connectedness of spheres"
+    authors: ["Sebastian Kumar"]
+    id: "https://github.com/leanprover-community/mathlib4/pull/28246 (source commit 037ad801e1e5a5b7aa1750957c07f7769812effc)"
+    type: "unmerged Mathlib pull request (Lean 4)"
+    location: >-
+      Mathlib/AlgebraicTopology/FundamentalGroupoid/SimplyConnectedSphere.lean,
+      Mathlib/AlgebraicTopology/FundamentalGroupoid/VanKampen.lean,
+      Mathlib/Topology/Path.lean, Mathlib/Logic/Equiv/PartialEquiv.lean
+    license: "Apache-2.0"
+    relationship: "adapts"
+    author_endorsement: "not-contacted"
+    note: >-
+      Simple connectedness of spheres, the path-factorization portion of the van Kampen
+      development and associated compatibility lemmas were adapted from this work; the
+      upstream copyright notices are retained in the Solution.lean header.
+
+# None known.
+related_formalizations: []
+
+classification:
+  # PENDING SIGN-OFF (Eric Vergo): the arXiv categories and the MSC codes below are a
+  # first pass by the presentation, not the formalization authors' own classification.
+  # 32J17 = compact complex 3-folds; 32Q60 = almost complex manifolds and integrability.
+  # Do not treat either list as authoritative until it is confirmed.
+  arxiv: ["math.CV", "math.AG", "math.GT"]
+  msc2020:
+    - "32J17"
+    - "32Q60"
+
+status:
+  scope: >-
+    Complete, as a Lean development: the HopfProblem module tree (aggregated by Solution.lean) proves
+    Mathoverflow1973.mathoverflow_1973, that the unit six-sphere in EuclideanSpace ℝ
+    (Fin 7) carries a ChartedSpace of EuclideanSpace ℂ (Fin 3) charts which is an
+    IsManifold for the model with corners 𝓘(ℂ, EuclideanSpace ℂ (Fin 3)) at smoothness
+    1 — over ℂ, holomorphic transition maps. The route is Alpöge's: the completed
+    (3,4,∞) modular family of 2-tori over the projective line is a compact complex
+    threefold homotopy equivalent to S⁶; Smale's theorem in dimension 6 makes that a
+    homeomorphism; the holomorphic atlas transports across it. Scope of the claim: what
+    is established mechanically is that the Lean development compiles, is sorry-free and
+    stays inside the standard three axioms. Statement fidelity — that this proposition
+    is the Hopf problem — rests on the statement being taken from Formal Conjectures,
+    and the underlying mathematics has not been through peer review.
+  sorry_count: 0
+  sorry_in_definitions: 0
+  axioms: ["propext", "Classical.choice", "Quot.sound"]
+  main_results:
+    - declaration: "Mathoverflow1973.mathoverflow_1973"
+      file: "HopfProblem/MainTheorem/Core3.lean"
+      sorry_count: 0
+      axioms: ["propext", "Classical.choice", "Quot.sound"]
+      comparator_config: "comparator/config.json"
+      literature_dependencies: []
+
+automation:
+  methods:
+    - method: "agent"
+      models: ["codex"]
+      framework: "OpenAI Codex"
+      tool_setup: >-
+        Not recorded by this repository. The Solution.lean file header states that "the
+        majority of the Lean code in this formalization is written by Codex"; the
+        session structure, iteration counts and human intervention points are not
+        documented in the sources available here, and nothing more specific is asserted.
+      prompting_notes: >-
+        Not recorded. This block is present because the formalization is agent-written
+        and saying so is required for an honest record, not because its details are
+        known to the author of this metadata file.
+  notes: >-
+    Human role: Boris Alexeev directed the formalization and is its responsible author;
+    the mathematics is Levent Alpöge's. This metadata file and the blueprint site under
+    site/ are a separate, later presentation layer (Eric Vergo, with Claude) and
+    contribute no mathematics.
+
+fidelity:
+  divergences: >-
+    The formal statement is not this repository's wording. Mathoverflow1973.mathoverflow_1973
+    has the type of the theorem stated in FormalConjectures/Mathoverflow/1973.lean, and
+    Challenge.lean in this repository restates it with `sorry` for the comparator. Three
+    points a reader should check rather than assume. (1) The carrier is
+    Mathoverflow1973.unitSphere 6, i.e. Metric.sphere 0 1 in EuclideanSpace ℝ (Fin 7)
+    with its subspace topology — the standard six-sphere, not a homeomorphic copy
+    carrying a topology produced by the construction. (2) The regularity index is 1 over
+    the complex model with corners, which is holomorphy of the transition maps, not
+    real smoothness of complex-valued charts; the development also proves the ω version,
+    Mathoverflow1973.SixSphereComplexAtlas.exists_complex_analytic_atlas, and the
+    certified statement is the weakening of it. (3) The ChartedSpace instance is
+    existentially quantified, so the theorem asserts existence of a complex structure and
+    does not name a canonical one. No statement-lock protocol was run: the statements
+    were not frozen before proof work by any process recorded here.
+
+review:
+  status: "self-assessed"
+  notes: >-
+    No external review of the formalization, and no peer review of the underlying
+    mathematics. PENDING SIGN-OFF (Eric Vergo) for the presentation's own claims. What
+    can be checked mechanically: Solution.lean contains no `sorry` and declares no
+    axioms of its own; the final theorem's own `#print axioms` line in the source
+    records the standard three; and the blueprint site's build-time audit re-runs
+    collectAxioms over every declaration it presents. What cannot: that the formal
+    statement is the intended mathematical claim, and that Alpöge's argument is correct.
+    The comparator configuration in comparator/config.json is present but no verifying
+    run has been recorded yet — until comparator/comparator-status.json exists there is
+    no independent kernel replay to cite, and the site is configured to say so rather
+    than to imply one.
+
+alignment:
+  namespace: "Mathoverflow1973"
+  statements:
+    - source: "The six-sphere admits a complex manifold structure compatible with its standard topology."
+      lean: "Mathoverflow1973.mathoverflow_1973"
+      module: "HopfProblem/MainTheorem/Core3.lean"
+      status: "proved"
+      note: >-
+        The certified statement (comparator/config.json theorem_names). Charts into
+        EuclideanSpace ℂ (Fin 3) on Mathoverflow1973.unitSphere 6, holomorphic
+        transitions via IsManifold 𝓘(ℂ, EuclideanSpace ℂ (Fin 3)) 1.
+    - source: "The same atlas at analytic regularity: the transition maps are analytic, not merely holomorphic to first order."
+      lean: "Mathoverflow1973.SixSphereComplexAtlas.exists_complex_analytic_atlas"
+      module: "HopfProblem/Threefold/SixSphereComplexAtlas.lean"
+      status: "proved"
+    - source: "A compact smooth 6-manifold homotopy equivalent to the 6-sphere is homeomorphic to it (Smale, generalized Poincaré in dimensions > 4)."
+      lean: "Mathoverflow1973.Smale.homeomorphic_sixSphere_of_homotopySixSphere"
+      module: "HopfProblem/Recognition/Smale13.lean"
+      status: "proved"
+      note: >-
+        Formalized here by the Morse-theoretic route (two critical points), not cited
+        from the literature. This is what moves the threefold's atlas onto the standard
+        sphere.
+
+acknowledgements: >-
+  Built on mathlib4 (pinned at tag v4.33.0). The complex-analysis and algebraic-topology
+  developments adapted from Yury Kudryashov's and Sebastian Kumar's unmerged Mathlib
+  work are named in `sources` above and in the Solution.lean file header, which retains
+  their copyright notices. The final statement is adapted from the Formal Conjectures
+  project.

@@ -1,1 +1,11 @@
 .lake/
+
+# local analysis dumps (dependency / verification tooling)
+.deps-dump.txt
+.names-after.txt
+.types-after.txt
+.types-before.txt
+depdump*.lean
+.pp-*.txt
+.types-*.txt
+.changed-names.txt

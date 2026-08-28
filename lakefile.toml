@@ -13,7 +13,20 @@ git = "https://github.com/leanprover-community/mathlib4.git"
 rev = "v4.33.0"
 
 [[lean_lib]]
+name = "HopfProblem"
+
+[[lean_lib]]
 name = "Challenge"
 
 [[lean_lib]]
 name = "Solution"
+
+# The comparator's sandbox regression fixture: `Solution` plus an
+# elaboration-time write outside the sandbox, driven by
+# `comparator/config-probe.json` from the "Denied-write probe" step of
+# .github/workflows/ci.yml.  Deliberately NOT a default target, and nothing
+# imports it — built outside the sandbox it writes exactly the canary files it
+# exists to prove impossible.  See comparator/SolutionProbe.lean.
+[[lean_lib]]
+name = "SolutionProbe"
+srcDir = "comparator"

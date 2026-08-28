@@ -1,0 +1,163 @@
+/-
+Released under Apache 2.0 license as described in the file LICENSE.
+SPDX-License-Identifier: Apache-2.0
+
+This module is part of the split of the original single-file `Solution.lean`
+of plby/HopfProblem into a thematic module tree.  Full provenance, attribution
+and copyright notices are retained in `Solution.lean` at the repository root.
+Declarations are verbatim from the original file and keep their original
+relative order within each module.  The modules form a single import chain
+whose concatenation is a linear extension of the true dependency order of the
+original file (computed from the compiled environment): a declaration may
+elaborate before some declarations that textually preceded it, but never
+before anything it depends on.  Two `private` lemmas whose users fell into a
+neighbouring module were made public (`SpecialPeriods.TauCusp.
+exists_upperHalfPlane_qParam_small_mo1973_17412` and
+`isOpen_qParam_norm_lt_mo1973_17413`); no other declaration text was edited.
+-/
+import HopfProblem.Uniformization.HolomorphicCousin
+import HopfProblem.Foundations.LineBundleTransport
+import HopfProblem.Recognition.Smale1
+import HopfProblem.Recognition.Smale2
+import HopfProblem.Recognition.Smale3
+import HopfProblem.Recognition.Smale4
+import HopfProblem.Recognition.Smale5
+import HopfProblem.HomologyOfX.SmallChainBiprod
+import HopfProblem.HomologyTheory.SingularMayerVietoris
+import HopfProblem.TorusHomology.PeriodTorusHigherHomology1
+import HopfProblem.CuspFibre.CuspCentralHomology1
+import HopfProblem.Recognition.Degree1
+import HopfProblem.Recognition.Degree2
+import HopfProblem.Recognition.Smale6
+import HopfProblem.Foundations.EuclideanSphere
+import HopfProblem.Recognition.Smale7
+import HopfProblem.Recognition.Smale8
+import HopfProblem.TorusHomology.PeriodTorusHigherHomology2
+import HopfProblem.CuspFibre.CuspCentralHomology2
+import HopfProblem.HomologyTheory.SphereHomology1
+import HopfProblem.TorusHomology.PeriodTorusHigherHomology3
+import HopfProblem.HomologyTheory.SphereHomology2
+import HopfProblem.Recognition.Smale9
+import HopfProblem.HomologyTheory.FirstHurewicz1
+import HopfProblem.Recognition.Smale10
+import HopfProblem.MainTheorem.SixSphereCube1
+import HopfProblem.HomologyOfX.ThreefoldHomologyStarCoproduct
+import HopfProblem.HomologyTheory.SphereHomology3
+import HopfProblem.Recognition.Smale11
+import HopfProblem.Foundations.TriangleRegularBaseFundamentalGroup
+import HopfProblem.Pi1.FundamentalGroupVanKampen1
+import HopfProblem.HomologyTheory.FirstHurewicz2
+import HopfProblem.TorusHomology.PeriodTorusHigherHomology4
+import HopfProblem.Hurewicz.SecondHurewicz
+import HopfProblem.Hurewicz.ThirdHurewicz
+import HopfProblem.TorusHomology.PeriodTorusHigherHomology5
+import HopfProblem.Hurewicz.HigherHurewicz1
+import HopfProblem.Foundations.Core1
+import HopfProblem.Lattice.Core1
+import HopfProblem.Foundations.Core2
+import HopfProblem.PeriodFamily.PeriodPoint
+import HopfProblem.Toric.ToricSpace1
+import HopfProblem.Uniformization.CuspUniformization1
+import HopfProblem.Lattice.Core2
+import HopfProblem.Foundations.Core3
+import HopfProblem.PeriodFamily.HolomorphicPeriodMap1
+import HopfProblem.Elliptic.Core1
+import HopfProblem.Threefold.SpecialPeriods1
+import HopfProblem.Foundations.InvariantSubsetQuotient
+import HopfProblem.Toric.ToricSpace2
+import HopfProblem.CuspFibre.CuspPositiveRetraction
+import HopfProblem.HomologyTheory.FirstHurewicz3
+import HopfProblem.Hurewicz.HigherHurewicz2
+import HopfProblem.MainTheorem.SixSphereCube2
+import HopfProblem.PeriodFamily.PeriodDomain
+import HopfProblem.TorusHomology.PeriodTorusHigherHomology6
+import HopfProblem.Toric.CuspHoneycombHexagon
+import HopfProblem.Recognition.Smale12
+import HopfProblem.CuspFibre.CuspCentralHomology3
+import HopfProblem.TorusHomology.PeriodTorusHigherHomology7
+import HopfProblem.CuspFibre.CuspSpecialization
+import HopfProblem.Foundations.Core4
+import HopfProblem.Uniformization.CuspUniformization2
+import HopfProblem.Threefold.SpecialPeriods2
+import HopfProblem.Pi1.MappingTorus
+import HopfProblem.HomologyOfX.CuspCoinvariants
+import HopfProblem.Uniformization.SpecialPeriods1
+import HopfProblem.Pi1.ThreefoldOverlapMappingTorus1
+import HopfProblem.Foundations.LocalOrbitQuotient
+import HopfProblem.Threefold.SpecialPeriods3
+import HopfProblem.Elliptic.Core2
+import HopfProblem.Uniformization.SpecialPeriods2
+import HopfProblem.Foundations.TwoAffineCharts
+import HopfProblem.Uniformization.SpecialPeriods3
+import HopfProblem.Threefold.SpecialPeriods4
+import HopfProblem.Uniformization.SpecialPeriods4
+import HopfProblem.Threefold.SpecialPeriods5
+import HopfProblem.Uniformization.SpecialPeriods5
+import HopfProblem.PeriodFamily.Core1
+import HopfProblem.Uniformization.SpecialPeriods6
+import HopfProblem.Foundations.Complex
+import HopfProblem.Uniformization.SpecialPeriods7
+import HopfProblem.Toric.DiagonalQuotient1
+import HopfProblem.PeriodFamily.Core2
+import HopfProblem.Threefold.SpecialPeriods6
+import HopfProblem.TorusHomology.PeriodTorusHigherHomology8
+import HopfProblem.CuspFibre.CuspCentralHomology4
+import HopfProblem.HomologyOfX.ThreefoldGluing1
+import HopfProblem.Uniformization.TriangleUniformizationGluing
+import HopfProblem.Elliptic.Core3
+import HopfProblem.Threefold.SpecialPeriods7
+import HopfProblem.HomologyOfX.ThreefoldGluing2
+import HopfProblem.Uniformization.CuspUniformization3
+import HopfProblem.Elliptic.Core4
+import HopfProblem.Foundations.FibreTopology
+import HopfProblem.PeriodFamily.HolomorphicPeriodMap2
+import HopfProblem.Threefold.SpecialPeriods8
+import HopfProblem.HomologyOfX.ThreefoldHomology1
+import HopfProblem.Pi1.FundamentalGroupVanKampen2
+import HopfProblem.Foundations.TwoOpenTransition
+import HopfProblem.Uniformization.SpecialPeriods8
+import HopfProblem.Elliptic.Core5
+import HopfProblem.Threefold.SpecialPeriods9
+import HopfProblem.HomologyOfX.ThreefoldHomology2
+import HopfProblem.Pi1.ThreefoldOverlapMappingTorus2
+import HopfProblem.Foundations.SplitGroupExtension
+import HopfProblem.Toric.DiagonalQuotient2
+import HopfProblem.Uniformization.CuspUniformization4
+import HopfProblem.PeriodFamily.Core3
+import HopfProblem.HomologyOfX.TrianglePeriodFamilyHomologyAlgebra
+import HopfProblem.Toric.DiagonalQuotient3
+import HopfProblem.Elliptic.Core6
+import HopfProblem.Threefold.SpecialPeriods10
+import HopfProblem.TorusHomology.PeriodTorusHigherHomology9
+import HopfProblem.PeriodFamily.Core4
+import HopfProblem.Foundations.TrianglePeriodFamilyHomologySplitting
+import HopfProblem.HomologyOfX.TrianglePeriodFamilyHomologyLattice
+import HopfProblem.Toric.DiagonalQuotient4
+import HopfProblem.Uniformization.SpecialPeriods9
+import HopfProblem.Foundations.Core5
+import HopfProblem.Pi1.TwistGroup
+import HopfProblem.PeriodFamily.Core5
+import HopfProblem.Pi1.MappingTorusHomology
+import HopfProblem.Elliptic.Core7
+import HopfProblem.Foundations.PeriodTorusTypeOneOne
+import HopfProblem.PeriodFamily.Core6
+import HopfProblem.Foundations.CanonicalProduct
+import HopfProblem.MainTheorem.Core1
+import HopfProblem.Threefold.SpecialPeriods11
+import HopfProblem.PeriodFamily.Core7
+import HopfProblem.Elliptic.Core8
+import HopfProblem.HomologyOfX.ThreefoldHomology3
+import HopfProblem.PeriodFamily.Core8
+import HopfProblem.CuspFibre.CuspBoundaryTopVanishing
+import HopfProblem.PeriodFamily.Core9
+import HopfProblem.CuspFibre.CuspNegation
+import HopfProblem.PeriodFamily.Core10
+import HopfProblem.HomologyOfX.ThreefoldHomology4
+import HopfProblem.Hurewicz.SixthHurewicz
+import HopfProblem.MainTheorem.SixSphereCube3
+import HopfProblem.Threefold.SpecialPeriods12
+import HopfProblem.Recognition.Degree3
+import HopfProblem.MainTheorem.Core2
+import HopfProblem.Recognition.Smale13
+import HopfProblem.Threefold.SixSphereComplexAtlas
+import HopfProblem.MainTheorem.Core3
