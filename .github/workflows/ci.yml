@@ -24,7 +24,11 @@ name: CI
 #              writes comparator/comparator-status.json and the checker-identity
 #              pin site/trust/kernel-identities.json from that record, and commits
 #              them back to `master` on push events — this is the only job with
-#              contents: write.
+#              contents: write. The status file is rewritten only when the
+#              verdict, the input hashes or the verifier identities changed
+#              (scripts/comparator_status_unchanged.sh): it is an
+#              elaboration-time trust input of the site, so a rewrite that
+#              says nothing new still costs a ~3 h regeneration.
 #
 # Deliberately NOT in CI: the blueprint site under site/. Its `lake build
 # Contents` pass is ~3 h at this scale and its output is ~20K pages, which is
@@ -272,6 +276,14 @@ jobs:
       # weaker validator accepts (codex-audit CX-052).
       - name: Test the comparator result validator against forged records
         run: python3 scripts/tests/test_validate_comparator_result.py
+
+      # The other gate in the publish job that has to be right in two directions:
+      # too eager and every push re-stamps an elaboration-time trust input of the
+      # site (a ~3 h regeneration for a verdict that did not move); too lazy and a
+      # changed certified source or a swapped verifier binary keeps the old
+      # record's reassuring text. Same reasoning as above, same seconds.
+      - name: Test the status-record change detector
+        run: bash scripts/tests/test_comparator_status_unchanged.sh
 
       # formalization.yaml is read by third parties (and by the blueprint's
       # metadata page) as structured data, so it has to actually satisfy the
@@ -1114,23 +1126,44 @@ jobs:
           echo "CI_RUN_URL=$url" >> "$GITHUB_ENV"
           echo "Resolved CI_RUN_URL=$url"
 
-      - name: Refresh comparator-status.json
+      # This artifact is the sole evidence the blueprint's trust surfaces quote,
+      # so everything in it is written here, by machine, and nothing in it is
+      # author-typed: the claim fields come from the result record the
+      # verification job emitted (which in turn copied them out of the very
+      # config it passed to the tool), and the note is composed from those.
+      # Nothing is asserted that the record does not carry.
+      #
+      # Composed whole with `jq -n` rather than merged into the file on disk
+      # (a362583 merges): this repository has no status artifact before the first
+      # run, and a merge would also carry forward keys a later workflow stopped
+      # writing.
+      #
+      # But composing it is not the same as committing it. The status file is an
+      # ELABORATION-TIME trust input of the site under site/ — an `input_file`
+      # freshness edge — so rewriting it invalidates the site's warm build, and a
+      # site regeneration here is ~3 h. Publishing a new `commit`, `verified_at`
+      # and `run_url` on every push therefore bought a three-hour rebuild each
+      # time a site-only commit landed, for a verdict that had not moved.
+      #
+      # So the composed record is compared against the committed one first, by
+      # `scripts/comparator_status_unchanged.sh`: strict JSON equality (jq, not a
+      # text diff) over the verdict, the input hashes, the challenge chain, the
+      # certified claim and the verifier identities. Where those agree, this run
+      # re-verified the same bytes with the same verifiers and has nothing new to
+      # say, so the file is left exactly as it is and this run's record goes out
+      # as an artifact only. A record is rewritten only when the verdict, the
+      # input hashes or the verifier identities change; `commit` therefore names
+      # the last commit AT WHICH THOSE BYTES WERE VERIFIED, and the digests the
+      # record carries are what lets a reader confirm the current tree still
+      # holds the same bytes. Missing, unreadable or incomplete committed records
+      # count as changed — the rewrite is suppressed only on positive evidence
+      # that it is unnecessary, so every doubt lands on the old behaviour.
+      - name: Refresh comparator-status.json if this run changed it
         run: |
           set -euo pipefail
-          # This artifact is the sole evidence the blueprint's trust surfaces
-          # quote, so everything in it is written here, by machine, and nothing
-          # in it is author-typed: the claim fields come from the result record
-          # the verification job emitted (which in turn copied them out of the
-          # very config it passed to the tool), and the note is composed from
-          # those. Nothing is asserted that the record does not carry.
-          #
-          # Composed whole with `jq -n` rather than merged into the file on disk
-          # (a362583 merges): this repository has no status artifact before the
-          # first run, and a merge would also carry forward keys a later workflow
-          # stopped writing.
           res="${RUNNER_TEMP}/result/comparator-result.json"
+          candidate="${RUNNER_TEMP}/comparator-status.json"
           run_url="${CI_RUN_URL:-${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}}"
-          mkdir -p "$(dirname "$COMPARATOR_STATUS")"
           jq -n \
             --slurpfile res "$res" \
             --arg run_url "$run_url" \
@@ -1205,9 +1238,21 @@ jobs:
                 + "rejected, as defense in depth. The comparator, lean4export, landrun and nanoda binaries "
                 + "and the certified sources hashed identically before and after the run."
                 )
-            ' > "${COMPARATOR_STATUS}.tmp"
-          mv "${COMPARATOR_STATUS}.tmp" "$COMPARATOR_STATUS"
-          cat "$COMPARATOR_STATUS"
+            ' > "$candidate"
+          cat "$candidate"
+
+          # Exit 0 = the committed record already states this verdict for these
+          # inputs and these verifiers. Anything else — including a committed
+          # file that is absent, unreadable or incomplete — means refresh.
+          if bash scripts/comparator_status_unchanged.sh "$COMPARATOR_STATUS" "$candidate"; then
+            prev_commit="$(jq -r '.commit // "an unrecorded commit"' "$COMPARATOR_STATUS")"
+            prev_run="$(jq -r '.run_url // "an unrecorded run"' "$COMPARATOR_STATUS")"
+            echo "::notice::comparator verdict unchanged: this run re-verified the same input hashes and verifier identities already certified at commit ${prev_commit} (${prev_run}), so ${COMPARATOR_STATUS} is left as it is and this run's record is uploaded as an artifact only."
+            exit 0
+          fi
+          mkdir -p "$(dirname "$COMPARATOR_STATUS")"
+          cp "$candidate" "$COMPARATOR_STATUS"
+          echo "refreshed ${COMPARATOR_STATUS} from this run."
 
       # The second, consumer-controlled half of codex-audit CX-064. The run's own
       # identity record establishes nothing on its own — a producer who writes
@@ -1258,6 +1303,9 @@ jobs:
           fi
           echo "checker identity pin OK: nanoda ${pin_repo} @ ${pin_commit}"
 
+      # What is in the tree — i.e. what a commit-back would push. On a run that
+      # deliberately did not rewrite the status, this is the older record, which
+      # is the honest thing for an artifact named "published" to contain.
       - name: Upload the published status artifact
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
@@ -1265,6 +1313,18 @@ jobs:
           path: |
             comparator/comparator-status.json
             site/trust/kernel-identities.json
+          retention-days: 30
+          if-no-files-found: error
+
+      # What THIS run would have written, always — including the runs that leave
+      # the committed record alone. Otherwise a run that re-verified the same
+      # inputs would leave no machine-readable trace of what it checked, and the
+      # decision not to rewrite would rest on the log alone.
+      - name: Upload this run's status record
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: comparator-status-this-run
+          path: ${{ runner.temp }}/comparator-status.json
           retention-days: 30
           if-no-files-found: error
 

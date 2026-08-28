@@ -17,11 +17,29 @@ workflow is split into three jobs along that boundary rather than written as one
 |-----|-------|-------|--------------|
 | `build` | trusted | `contents: read` | Pin assertions, `formalization.yaml` schema validation, the validator's own forged-record test suite, `lake build HopfProblem`, the axiom audit of `Mathoverflow1973.mathoverflow_1973`. Uploads the subject oleans. |
 | `comparator` | **untrusted** | `contents: read`, no OIDC | Builds landrun + nanoda, self-tests the sandbox, proves containment with a workflow-owned probe, then runs `leanprover/comparator` — the first elaboration of `Challenge` and `Solution` anywhere in the pipeline, inside landrun. Emits `comparator-result.json`. |
-| `publish` | trusted | `contents: write` | Re-validates that record field by field against its own trusted inputs, writes `comparator/comparator-status.json` and checks `site/trust/kernel-identities.json`, commits both back to `master` on push events. |
+| `publish` | trusted | `contents: write` | Re-validates that record field by field against its own trusted inputs, refreshes `comparator/comparator-status.json` when this run changed it, checks `site/trust/kernel-identities.json`, commits both back to `master` on push events. |
 
 `build` deliberately builds only the `HopfProblem` library. The package's `defaultTargets`
 are `Challenge` and `Solution`; a plain `lake build` would elaborate both in the job that
 precedes the sandbox, which is the exact failure the split exists to prevent.
+
+## When a record is rewritten
+
+`comparator/comparator-status.json` is an *elaboration-time* input of the blueprint site under
+`site/`, so every rewrite of it invalidates that build's freshness edge and costs a roughly
+three-hour regeneration. The publish job therefore composes this run's record, validates it exactly
+as it always did, and then compares it against the committed one — a strict JSON equality (jq, not a
+text diff) over the verdict, the input hashes, the challenge chain, the certified theorem names and
+permitted axioms, and the verifier identities, including each `kernel_identities` entry's
+`executable_sha256`. A record is rewritten only when the verdict, the input hashes or the verifier
+identities change; the `commit` field therefore names the last commit at which those bytes were
+verified, and the hashes let a reader confirm the current tree carries the same bytes. Where they
+agree, the run logs a notice naming the standing record's `commit` and `run_url`, leaves the file
+alone, and uploads its own record as an artifact only. A committed file that is absent, unreadable
+or missing any compared field counts as changed, so the rewrite is suppressed only on positive
+evidence that it is unnecessary. The comparison lives in
+`scripts/comparator_status_unchanged.sh` and its fixtures — a same-hashes pair that must be skipped,
+an edited-solution pair that must not be — run in the `build` job alongside the validator's.
 
 ## What each guard is for
 
