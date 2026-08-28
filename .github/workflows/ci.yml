@@ -32,11 +32,16 @@ name: CI
 #
 # Deliberately NOT in CI: the blueprint site under site/. Its `lake build
 # Contents` pass is ~3 h at this scale and its output is ~20K pages, which is
-# not a hosted-runner workload; it is generated and published out of band. Every
-# a362583 gate that exists to protect that generation (the trust-provenance gate
-# of CX-075/CX-078, the source-link revision gate of CX-066, the deploy-predicate
-# coupling of CX-079, the publish-job Lean setup of CX-072, the off-origin asset
-# gates) therefore has no counterpart here. See .github/README-ci.md.
+# not a hosted-runner workload; it is generated out of band and SERVED by
+# site-deploy.yml, which downloads the release tarball named by
+# site/trust/site-build.json, authenticates it against that pin and against the
+# checkout (scripts/check_site_release.py: generation revision on this history,
+# clean, trust inputs re-hashed -- the CX-075 property -- source links naming
+# the revision -- CX-066), runs the off-origin asset gates, and deploys it to
+# Pages. The gates that protect site GENERATION (the trust-provenance gate's
+# lakefile coupling of CX-078, the deploy-predicate coupling of CX-079, the
+# publish-job Lean setup of CX-072) have no counterpart here because nothing
+# here generates. See .github/README-ci.md.
 #
 # Ported from eric-vergo/OEIS-A362583-Irrationality .github/workflows/ci.yml.
 
@@ -59,6 +64,10 @@ on:
       # paths-ignore is the belt-and-braces second guard.
       - 'comparator/comparator-status.json'
       - 'site/trust/kernel-identities.json'
+      # The site pin (site/trust/site-build.json) is an input of site-deploy.yml,
+      # not of anything here: a pin-only commit publishes a site, it does not
+      # change what the comparator would look at.
+      - 'site/trust/site-build.json'
   workflow_dispatch:
 
 # Deny by default; every job re-declares exactly what it needs.

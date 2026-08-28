@@ -131,10 +131,27 @@ retrigger the workflow.
 
 ## Deliberately not run in CI
 
-**The blueprint site under `site/` is not built, gated or deployed here.** Its
-`lake build Contents` pass takes roughly three hours at this scale and its output is on the
-order of 20,000 pages; that is not a hosted-runner workload, and it is generated and
-published out of band.
+**The blueprint site under `site/` is not built here.** Its `lake build Contents` pass
+takes roughly three hours at this scale; that is not a hosted-runner workload, and it is
+generated out of band. It is *served* from here: `site-deploy.yml` (a separate workflow,
+triggered by a change to `site/trust/site-build.json` or by hand) downloads the release
+tarball that pin names, refuses it unless its digest is the pinned one before unpacking a
+byte, then runs `scripts/check_site_release.py` against the checkout — the tree's own
+`-verso-data/trust-provenance.json` must name the pinned generation revision, be clean, and
+be on `master`'s history; every elaboration-time trust input it lists must still hash at the
+checkout to what the generator read (the CX-075 property, so a comparator page quoting a
+verdict `master` has since replaced is refused, not published); every project-local source
+link in the registry must name the revision (CX-066); the probe-and-degrade surfaces must be
+on disk; the tree must be under the 1 GB GitHub Pages publishes — then the off-origin asset
+gates (`scripts/site_offline_gates.sh`), then the Pages artifact. The gate's refusals are
+covered by fixtures (`scripts/tests/test_check_site_release.py`, run at the top of the
+workflow). `scripts/package_site.sh` is the workstation half: it runs the same gate on the
+freshly packaged tree before the release exists.
+
+What this does not establish is that the tarball is a faithful generation from the pinned
+revision. A workstation build is not reproduced in CI; the gate authenticates what the tree
+says about itself against `master`, not the act of generating it. That is the honest limit
+of serving an out-of-band build, and the site's trust model claims nothing more.
 
 Everything in the source workflow that exists to protect *site generation* consequently has
 no counterpart here, and their absence is a consequence of that decision rather than an
@@ -144,7 +161,9 @@ oversight:
   they guard against a warm `site/.lake` replaying a stale evidence page;
 * the source-link revision gate over `decl-registry.json`;
 * the off-origin / no-CDN asset gates over the generated HTML;
-* the deploy-predicate coupling test — there is no `deploy` job and no Pages artifact;
+* the deploy-predicate coupling test — `site-deploy.yml` has no dirty-but-not-deployable
+  case to couple: every run of it can reach Pages, so a dirty provenance record is refused
+  unconditionally;
 * the site-build toolchain setup — no job in this workflow runs `lake` after the
   `comparator` job. (If one is ever added, it needs its own Lean setup: a job split does not
   inherit one.)

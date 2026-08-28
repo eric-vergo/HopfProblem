@@ -1,0 +1,153 @@
+name: Site deploy
+
+# Serves the blueprint site under site/ from GitHub Pages.
+#
+# The site is NOT generated here: its `lake build Contents` pass is a multi-hour
+# job at this scale (see ci.yml's header and .github/README-ci.md, "Deliberately
+# not run in CI"). It is generated on a workstation, packaged by
+# scripts/package_site.sh into a tarball on a GitHub Release, and pinned by
+# site/trust/site-build.json -- a file committed to master that names the release
+# asset and its SHA-256. This workflow is the trust boundary between that
+# out-of-band build and the published site:
+#
+#   verify   contents: read. Reads the pin, downloads the pinned asset, refuses it
+#            unless its digest is the pinned one BEFORE unpacking a byte, then runs
+#            scripts/check_site_release.py: the tree's own provenance record must
+#            name the pinned generation revision, be clean, and be on this
+#            branch's history; every elaboration-time trust input it lists must
+#            still hash, at this checkout, to what the generator read (CX-075);
+#            every project-local source link must name the generation revision
+#            (CX-066); the probe-and-degrade surfaces must be on disk. Then the
+#            off-origin asset gates (scripts/site_offline_gates.sh), then the
+#            Pages artifact is uploaded.
+#   deploy   pages: write + id-token: write, master only. actions/deploy-pages.
+#
+# What this does NOT establish: that the tarball is a faithful generation from
+# the pinned revision. A workstation build is not reproducible here, and the
+# gate authenticates what the tree SAYS about itself against master, not the
+# act of generating it. The trust-model page on the site says the same.
+
+on:
+  push:
+    branches: [master]
+    # Only the pin: a change to this workflow or its scripts without a new pin
+    # is re-verified by hand (workflow_dispatch), not by a run that would refuse
+    # the unchanged release for no new reason.
+    paths:
+      - 'site/trust/site-build.json'
+  workflow_dispatch:
+
+# Deny by default; every job re-declares exactly what it needs.
+permissions:
+  contents: read
+
+# One deploy at a time, never cancelled mid-flight: Pages serves whichever
+# deployment finished last.
+concurrency:
+  group: site-deploy
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write      # actions/configure-pages
+    steps:
+      - name: Check out this repository (pin + trust inputs)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          # The gate asks whether the generation revision is on this history.
+          fetch-depth: 0
+
+      - name: Gate fixtures
+        run: python3 scripts/tests/test_check_site_release.py
+
+      - name: Read the site pin
+        id: pin
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, re
+          pin = json.load(open("site/trust/site-build.json", encoding="utf-8"))
+          release = pin["release"]
+          for key in ("tag", "asset"):
+              value = release[key]
+              if not re.fullmatch(r"[A-Za-z0-9._-]+", value):
+                  raise SystemExit("pin: release.{} {!r} is not a plain name".format(key, value))
+          if not re.fullmatch(r"[0-9a-f]{64}", release["sha256"]):
+              raise SystemExit("pin: release.sha256 is not a SHA-256 hex digest")
+          print("tag=" + release["tag"])
+          print("asset=" + release["asset"])
+          print("sha256=" + release["sha256"])
+          print("revision=" + pin["generationRevision"])
+          PY
+
+      - name: Download the pinned release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.pin.outputs.tag }}
+          ASSET: ${{ steps.pin.outputs.asset }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/site-release"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$ASSET" --dir "$RUNNER_TEMP/site-release"
+          ls -l "$RUNNER_TEMP/site-release"
+
+      # Digest first, unpack second: nothing below reads a byte the pin did not
+      # vouch for.
+      - name: Refuse the asset unless its digest is the pinned one
+        env:
+          ASSET: ${{ steps.pin.outputs.asset }}
+          SHA256: ${{ steps.pin.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/site-release"
+          echo "$SHA256  $ASSET" | sha256sum --check --strict
+
+      - name: Unpack
+        env:
+          ASSET: ${{ steps.pin.outputs.asset }}
+        run: |
+          set -euo pipefail
+          mkdir -p site/_out/site
+          tar -C site/_out/site -xzf "$RUNNER_TEMP/site-release/$ASSET"
+          test -d site/_out/site/html-multi
+          du -sh site/_out/site/html-multi
+
+      - name: Authenticate the build against this checkout
+        env:
+          ASSET: ${{ steps.pin.outputs.asset }}
+        run: |
+          set -euo pipefail
+          python3 scripts/check_site_release.py \
+            --pin site/trust/site-build.json \
+            --tarball "$RUNNER_TEMP/site-release/$ASSET" \
+            --site-root site/_out/site/html-multi \
+            --repo-root "$PWD" \
+            --head "$(git rev-parse HEAD)" \
+            --repository "$GITHUB_REPOSITORY"
+
+      - name: Off-origin asset gates
+        run: bash scripts/site_offline_gates.sh site/_out/site/html-multi
+
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: site/_out/site/html-multi
+
+  deploy:
+    if: github.ref_name == 'master'
+    needs: verify
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5

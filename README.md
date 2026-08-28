@@ -103,7 +103,19 @@ commits `comparator/comparator-status.json` back to `master`. First run
 verifier identities change, so site-only commits do not churn it. The site's comparator
 page reads that record back (it never re-runs anything) and labels the verdict
 "CI-verified" with the run's deep link; the site itself is not built in CI (its
-registry pass alone is ~3 h at this scale).
+registry pass alone is ~3 h at this scale). It is generated on a workstation and *served*
+by CI: `.github/workflows/site-deploy.yml` publishes
+[eric-vergo.github.io/HopfProblem](https://eric-vergo.github.io/HopfProblem/) from a
+tarball on a GitHub Release, pinned by `site/trust/site-build.json` (SHA-256, generation
+revision, fork pins). The workflow refuses the asset unless its digest is the pinned one,
+then `scripts/check_site_release.py` holds the tree's own provenance record to the
+checkout — generation revision on `master`'s history and not dirty, every
+elaboration-time trust input re-hashed against the checkout, every project-local source
+link naming the revision, the trust surfaces on disk — and runs the off-origin asset
+gates before anything is uploaded. What that does not establish is that the tarball is a
+faithful generation from the pinned revision: a workstation build is not reproduced in
+CI, and the gate authenticates what the tree says about itself, not the act of generating
+it.
 
 ## The blueprint site (`site/`)
 
@@ -126,6 +138,8 @@ per-node ledger is part of the external review record (`codex-audit/`).
 cd site
 lake build Contents                                  # compiles the site against the subject
 rm -rf _out/site && lake env lean --run Main.lean --output _out/site
+cd .. && scripts/package_site.sh                     # tarball + site/trust/site-build.json, then
+                                                     # the release / commit / push it prints
 ```
 
 The site pins the same toolchain and Mathlib tag as the subject and imports the

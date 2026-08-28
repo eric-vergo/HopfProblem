@@ -63,13 +63,19 @@ package Contents where
     -- honest degraded (signature / syntactic) rendering tier rather than paying for
     -- full re-elaboration 20,600 times.
     ⟨`weak.verso.blueprint.graph.includeAllDecls, true⟩,
-    -- Scale cap (d): per-declaration PAGES.  A decl page is ~7 MB here — almost entirely
-    -- its local dependency-graph payload — and emitting one for each of the ~20,600
-    -- declarations measured at ~20 pages/min (≈16 h per generation).  The registry index
-    -- stays complete; pages go to the 250 most-referenced unpresented declarations, the
-    -- rest are indexed with a "no page (over cap)" pill and a source link, and the trust
-    -- model says so.  Raise once the local graph is bounded by node count (fork follow-up).
+    -- Scale cap (d): per-declaration PAGES.  Before the local graph was bounded, a decl
+    -- page was ~7 MB here — almost entirely its local dependency-graph payload — and
+    -- emitting one for each of the ~20,600 declarations measured at ~20 pages/min (≈16 h
+    -- per generation).  The registry index stays complete; pages go to the 250
+    -- most-referenced unpresented declarations, the rest are indexed with a "no page
+    -- (over cap)" pill and a source link, and the trust model says so.
     ⟨`weak.verso.blueprint.declRegistry.maxDeclPages, .ofNat 250⟩,
+    -- Scale cap (e): the per-page LOCAL GRAPH, by node count.  The radius-2 neighborhood
+    -- of a hub declaration in a 20,600-node graph is thousands of nodes — a multi-megabyte
+    -- page nobody can read, and a site GitHub Pages will not publish (1 GB).  The page
+    -- keeps the first 60 declarations met breadth-first and says how many within the
+    -- radius it left out (`verso.blueprint.nodePage.localGraphMaxNodes`, Showcase 63dbb25).
+    ⟨`weak.verso.blueprint.nodePage.localGraphMaxNodes, .ofNat 60⟩,
     -- Automatic dependency inference: the subject carries no `@[blueprint]` edges, so
     -- graph provenance is machine-derived (CX-033) rather than author-declared.
     ⟨`weak.verso.blueprint.autoDeps, true⟩,
